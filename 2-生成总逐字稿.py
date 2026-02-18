@@ -3,6 +3,8 @@ import threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
+from tenacity import retry, stop_after_attempt, wait_exponential
+
 from core.audio_chunker import AudioChunker
 from core.gemini_asr import GeminiASR
 
@@ -17,6 +19,7 @@ class BatchAudioTranscriber:
         self.lock = threading.Lock()
         self.completed_count = 0
 
+    # @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60))
     def _process_single_chunk(self, chunk_file, system_prompt, prompt, total_chunks):
         chunk_path = Path(chunk_file)
         md_file = chunk_path.with_suffix('.md')
@@ -75,16 +78,16 @@ if __name__ == "__main__":
         # 输出规范
         "保留所有的停顿、口语化表达和重复等所有内容，对音频语音完全忠实。"
         "严格按照用户提供的【原典参考】校对专有名词。"
-        "使用简体字输出。原典引用的时候使用繁体字和『』符号。"
+        "使用简体字输出。原典引用的时候使用『』符号。"
         "只输出转录内容，不说多余的话。"
     )
 
-    prompt_path = r"摩诃止观-久仁法师-各音频原典提示词/001.txt"
-    audio_path = "摩诃止观-久仁法师/摩诃止观001.mp3"
+    prompt_path = r"摩诃止观-久仁法师-各音频原典提示词/002原典提示词.txt"
+    audio_path = "摩诃止观-久仁法师/摩诃止观002.mp3"
     with open(prompt_path, "r", encoding="utf-8") as f:
         prompt_text = f.read()
     prompt = f"""
-    【原典参考】（由pdf复制而来）
+    【原典参考】
     {prompt_text}
     """
 
@@ -94,7 +97,7 @@ if __name__ == "__main__":
         overlap_seconds=10,
         temperature=0.1,
         top_p=0.95,
-        max_workers=16
+        max_workers=25
     )
 
     print("开始进行音频切分与批量处理...")
