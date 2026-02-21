@@ -20,7 +20,7 @@ class BatchAudioTranscriber:
         self.completed_count = 0
 
     # @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60))
-    def _process_single_chunk(self, chunk_file, system_prompt, prompt, total_chunks):
+    def _process_single_chunk(self, chunk_file, chunk_index, system_prompt, prompt, total_chunks):
         chunk_path = Path(chunk_file)
         md_file = chunk_path.with_suffix('.md')
 
@@ -34,21 +34,26 @@ class BatchAudioTranscriber:
 
         chunk_text = self.asr.recognize(system_prompt, prompt, chunk_file)
 
+        header = f"# 片段 {chunk_index}/{total_chunks}\n\n"
+        final_content = header + chunk_text
+
         with open(md_file, "w", encoding="utf-8") as f:
-            f.write(chunk_text)
+            f.write(final_content)
 
         with self.lock:
             self.completed_count += 1
             current_count = self.completed_count
         print(f"--- 已完成 {current_count}/{total_chunks} 个片段 ---")
 
-        return chunk_text, chunk_file
+        return final_content, chunk_file
 
     def process_full_audio(self, audio_path, system_prompt, prompt):
         self.completed_count = 0
         audio_path_obj = Path(audio_path)
         base_name = audio_path_obj.stem
-        chunk_output_dir = f"{base_name}_chunks_{self.chunk_minutes}m_{self.overlap_seconds}s"
+        parent_dir = audio_path_obj.parent
+
+        chunk_output_dir = parent_dir / f"{base_name}_chunks_{self.chunk_minutes}m_{self.overlap_seconds}s"
         os.makedirs(chunk_output_dir, exist_ok=True)
 
         chunk_files = self.chunker.process(audio_path, output_dir=str(chunk_output_dir))
@@ -58,8 +63,8 @@ class BatchAudioTranscriber:
 
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             futures = [
-                executor.submit(self._process_single_chunk, chunk_file, system_prompt, prompt, total_chunks)
-                for chunk_file in chunk_files
+                executor.submit(self._process_single_chunk, chunk_file, i, system_prompt, prompt, total_chunks)
+                for i, chunk_file in enumerate(chunk_files)
             ]
 
             for future in futures:
@@ -78,12 +83,14 @@ if __name__ == "__main__":
         # 输出规范
         "保留所有的停顿、口语化表达和重复等所有内容，对音频语音完全忠实。"
         "严格按照用户提供的【原典参考】校对专有名词。"
-        "使用简体字输出。原典引用的时候使用『』符号。"
+        "引用原典的时候使用『』符号。"
         "只输出转录内容，不说多余的话。"
     )
 
-    prompt_path = r"摩诃止观-久仁法师-各音频原典提示词/002原典提示词.txt"
-    audio_path = "摩诃止观-久仁法师/摩诃止观002.mp3"
+    prompt_path = r"摩诃止观004/004原文.txt"
+    audio_path = "摩诃止观004/摩诃止观004.mp3"
+    chunk_minutes = 3  # 片段音频分钟数
+    max_workers = 25  # 线程数
     with open(prompt_path, "r", encoding="utf-8") as f:
         prompt_text = f.read()
     prompt = f"""
@@ -91,13 +98,15 @@ if __name__ == "__main__":
     {prompt_text}
     """
 
-    output_filename = f"{Path(audio_path).stem}_逐字稿.md"
+    audio_path_obj = Path(audio_path)
+    output_filename = audio_path_obj.parent / f"{audio_path_obj.stem}_逐字稿.md"
+
     pipeline = BatchAudioTranscriber(
-        chunk_minutes=3,
+        chunk_minutes=chunk_minutes,
         overlap_seconds=10,
         temperature=0.1,
         top_p=0.95,
-        max_workers=25
+        max_workers=max_workers
     )
 
     print("开始进行音频切分与批量处理...")

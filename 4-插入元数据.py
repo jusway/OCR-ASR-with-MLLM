@@ -53,9 +53,9 @@ class AudioMetadataManager:
 
 if __name__ == "__main__":
     # 音频路径
-    audio_file = "摩诃止观-久仁法师/摩诃止观002.mp3"
+    audio_file = "摩诃止观-久仁法师/摩诃止观003.mp3"
     # 书面稿路径
-    md_file = "./摩诃止观002_书面稿.md"
+    md_file = "摩诃止观003_书面稿.md"
 
     base_name, ext = os.path.splitext(md_file)
     output_file = f"{base_name}_元数据{ext}"

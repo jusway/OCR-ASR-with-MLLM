@@ -1,12 +1,9 @@
 import os
-import time
 import uuid
 import glob
 import subprocess
 from pathlib import Path
 from pydub import AudioSegment
-from google import genai
-from google.genai import types
 
 
 class AudioChunker:
