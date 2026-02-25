@@ -6,9 +6,9 @@ from core.gemini_asr import GeminiASR
 
 
 class AudioTailTranscriber:
-    def __init__(self, temperature: float = 0.1, top_p: float = 0.95):
+    def __init__(self, tail_minutes: int = 5, temperature: float = 0.1, top_p: float = 0.95):
         self.asr = GeminiASR(temperature=temperature, top_p=top_p)
-        self.tail_minutes = 5
+        self.tail_minutes = tail_minutes
 
     def _extract_tail(self, audio_path: str) -> str:
         audio = AudioSegment.from_file(audio_path)
@@ -37,7 +37,7 @@ class AudioTailTranscriber:
 
         prompt = "请转录这段音频。"
 
-        print("正在截取音频最后5分钟并提交给模型处理...")
+        print(f"正在截取音频最后{self.tail_minutes}分钟并提交给模型处理...")
         transcription = self.asr.recognize(system_prompt, prompt, temp_audio_path)
 
         if os.path.exists(temp_audio_path):
@@ -47,13 +47,14 @@ class AudioTailTranscriber:
 
 
 if __name__ == "__main__":
-    audio_path = "摩诃止观004/摩诃止观004.mp3"
+    audio_path = "摩诃止观-久仁法师/摩诃止观009/摩诃止观009.mp3"
+    target_minutes = 10
 
-    transcriber = AudioTailTranscriber()
+    transcriber = AudioTailTranscriber(tail_minutes=target_minutes)
     final_text = transcriber.process(audio_path)
 
     audio_p = Path(audio_path)
-    output_filename = audio_p.parent / f"{audio_p.stem}_结尾5分钟逐字稿.md"
+    output_filename = audio_p.parent / f"{audio_p.stem}_结尾{target_minutes}分钟逐字稿.md"
 
     with open(output_filename, "w", encoding="utf-8") as f:
         f.write(final_text)

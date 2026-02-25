@@ -3,23 +3,20 @@ import threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
-from tenacity import retry, stop_after_attempt, wait_exponential
-
 from core.audio_chunker import AudioChunker
 from core.gemini_asr import GeminiASR
 
 
 class BatchAudioTranscriber:
-    def __init__(self, chunk_minutes=3, overlap_seconds=10, temperature=0.1, top_p=0.95, max_workers=3):
+    def __init__(self, model_name, chunk_minutes=3, overlap_seconds=10, temperature=0.1, top_p=0.95, max_workers=3):
         self.chunk_minutes = chunk_minutes
         self.overlap_seconds = overlap_seconds
         self.chunker = AudioChunker(chunk_minutes=chunk_minutes, overlap_seconds=overlap_seconds)
-        self.asr = GeminiASR(temperature=temperature, top_p=top_p)
+        self.asr = GeminiASR(model_name=model_name, temperature=temperature, top_p=top_p)
         self.max_workers = max_workers
         self.lock = threading.Lock()
         self.completed_count = 0
 
-    # @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60))
     def _process_single_chunk(self, chunk_file, chunk_index, system_prompt, prompt, total_chunks):
         chunk_path = Path(chunk_file)
         md_file = chunk_path.with_suffix('.md')
@@ -32,6 +29,7 @@ class BatchAudioTranscriber:
             with open(md_file, "r", encoding="utf-8") as f:
                 return f.read(), chunk_file
 
+        # 调用 recognize (GeminiASR 内部已使用 self.model_name)
         chunk_text = self.asr.recognize(system_prompt, prompt, chunk_file)
 
         header = f"# 片段 {chunk_index}/{total_chunks}\n\n"
@@ -62,10 +60,12 @@ class BatchAudioTranscriber:
         total_chunks = len(chunk_files)
 
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = [
-                executor.submit(self._process_single_chunk, chunk_file, i, system_prompt, prompt, total_chunks)
-                for i, chunk_file in enumerate(chunk_files)
-            ]
+            # 提交任务时，顺序保持与切分顺序一致
+            futures = []
+            for i, chunk_file in enumerate(chunk_files):
+                future = executor.submit(self._process_single_chunk, chunk_file, i , system_prompt, prompt,
+                                         total_chunks)
+                futures.append(future)
 
             for future in futures:
                 chunk_text, chunk_file = future.result()
@@ -87,10 +87,13 @@ if __name__ == "__main__":
         "只输出转录内容，不说多余的话。"
     )
 
-    prompt_path = r"摩诃止观004/004原文.txt"
-    audio_path = "摩诃止观004/摩诃止观004.mp3"
-    chunk_minutes = 3  # 片段音频分钟数
-    max_workers = 25  # 线程数
+    prompt_path = r"摩诃止观-久仁法师/摩诃止观009/009原文.txt"
+    audio_path = "摩诃止观-久仁法师/摩诃止观009/摩诃止观009.mp3"
+    chunk_minutes = 5
+    max_workers = 15
+    model_name = "gemini-3.1-pro-preview"
+
+
     with open(prompt_path, "r", encoding="utf-8") as f:
         prompt_text = f.read()
     prompt = f"""
@@ -102,6 +105,7 @@ if __name__ == "__main__":
     output_filename = audio_path_obj.parent / f"{audio_path_obj.stem}_逐字稿.md"
 
     pipeline = BatchAudioTranscriber(
+        model_name=model_name,  # 传入模型名
         chunk_minutes=chunk_minutes,
         overlap_seconds=10,
         temperature=0.1,
@@ -109,7 +113,7 @@ if __name__ == "__main__":
         max_workers=max_workers
     )
 
-    print("开始进行音频切分与批量处理...")
+    print(f"开始进行音频切分与批量处理 (使用模型: {model_name})...")
     final_text = pipeline.process_full_audio(audio_path, system_prompt, prompt)
     print("\n所有片段处理完成！")
 

@@ -9,7 +9,7 @@ from core.pdf_loader import PDFLoader
 class GeminiOCR:
     def __init__(self, api_key: str):
         self.api_key = api_key
-        self.url = "https://api.aifuwu.icu/v1beta/models/gemini-3-pro-preview:streamGenerateContent?alt=sse"
+        self.url = "https://api.aifuwu.icu/v1beta/models/gemini-3.1-pro-preview:streamGenerateContent?alt=sse"
 
         self.session = requests.Session()
         self.session.headers.update({

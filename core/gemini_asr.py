@@ -8,8 +8,9 @@ from pathlib import Path
 
 
 class GeminiASR:
-    def __init__(self, temperature: float = 0.1, top_p: float = 0.95):
+    def __init__(self, model_name: str, temperature: float = 0.1, top_p: float = 0.95):
         self.client = genai.Client(http_options={'timeout': None})
+        self.model_name = model_name
         self.temperature = temperature
         self.top_p = top_p
 
@@ -31,7 +32,7 @@ class GeminiASR:
         )
 
         response_stream = self.client.models.generate_content_stream(
-            model="gemini-3-pro-preview",
+            model=self.model_name,
             contents=[audio_file, prompt],
             config=config
         )
@@ -70,7 +71,7 @@ if __name__ == "__main__":
     {prompt_text}
     """
 
-    asr = GeminiASR(temperature=0.1, top_p=0.95)
+    asr = GeminiASR(model_name="gemini-3.1-pro-preview", temperature=0.1, top_p=0.95)
 
     print("正在提交给模型处理，采用流式输出，请耐心等待...")
     full_transcription = asr.recognize(system_prompt, prompt, audio_path)

@@ -13,7 +13,7 @@ class GeminiDebugClient:
     def __init__(self, api_key: str):
         self.api_key = api_key
         # 尝试添加 ?alt=sse 参数来强制开启 Server-Sent Events 流式模式
-        self.url = "https://api.aifuwu.icu/v1beta/models/gemini-3-pro-preview:streamGenerateContent?alt=sse"
+        self.url = "https://api.aifuwu.icu/v1beta/models/gemini-3.1-pro-preview:streamGenerateContent?alt=sse"
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
