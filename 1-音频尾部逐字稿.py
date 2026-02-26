@@ -6,8 +6,8 @@ from core.gemini_asr import GeminiASR
 
 
 class AudioTailTranscriber:
-    def __init__(self, tail_minutes: int = 5, temperature: float = 0.1, top_p: float = 0.95):
-        self.asr = GeminiASR(temperature=temperature, top_p=top_p)
+    def __init__(self,model_name, tail_minutes: int = 5, temperature: float = 0.1, top_p: float = 0.95):
+        self.asr = GeminiASR(temperature=temperature, top_p=top_p,model_name=model_name)
         self.tail_minutes = tail_minutes
 
     def _extract_tail(self, audio_path: str) -> str:
@@ -47,10 +47,11 @@ class AudioTailTranscriber:
 
 
 if __name__ == "__main__":
-    audio_path = "摩诃止观-久仁法师/摩诃止观009/摩诃止观009.mp3"
+    audio_path = "摩诃止观-久仁法师/摩诃止观010/摩诃止观010.mp3"
     target_minutes = 10
+    model_name="gemini-3.1-pro-preview"
 
-    transcriber = AudioTailTranscriber(tail_minutes=target_minutes)
+    transcriber = AudioTailTranscriber(model_name=model_name,tail_minutes=target_minutes)
     final_text = transcriber.process(audio_path)
 
     audio_p = Path(audio_path)

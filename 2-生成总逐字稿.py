@@ -91,7 +91,7 @@ if __name__ == "__main__":
     audio_path = "摩诃止观-久仁法师/摩诃止观009/摩诃止观009.mp3"
     chunk_minutes = 5
     max_workers = 15
-    model_name = "gemini-3.1-pro-preview"
+    model_name = "gemini-3-pro-preview"
 
 
     with open(prompt_path, "r", encoding="utf-8") as f:

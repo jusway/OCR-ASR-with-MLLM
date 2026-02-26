@@ -64,9 +64,9 @@ if __name__ == "__main__":
         "不丢失任何总逐字稿的信息，也不能自行添加没说的信息。"
         "只输出文稿内容，不说多余的话。"
     )
-    prompt_path = r"摩诃止观-久仁法师/摩诃止观005/005原文.txt"
-    transcript_path = "摩诃止观-久仁法师/摩诃止观005/摩诃止观005_逐字稿.md"
-    model_name="gemini-3-pro-preview"
+    prompt_path = r"摩诃止观-久仁法师/摩诃止观009/009原文.txt"
+    transcript_path = "摩诃止观-久仁法师/摩诃止观009/摩诃止观009_逐字稿.md"
+    model_name="gemini-3.1-pro-preview"
 
 
 
