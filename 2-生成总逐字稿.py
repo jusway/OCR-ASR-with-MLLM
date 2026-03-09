@@ -77,7 +77,7 @@ class BatchAudioTranscriber:
 if __name__ == "__main__":
     system_prompt = (
         # 角色
-        "你是一位资深的佛法音频转录义工。"
+        "你是一位资深的佛法音频转录工作的出家比丘大师。"
         # 任务
         "将用户提供的音频准确转录为逐字稿。"
         # 输出规范
@@ -87,11 +87,12 @@ if __name__ == "__main__":
         "只输出转录内容，不说多余的话。"
     )
 
-    prompt_path = r"摩诃止观-久仁法师/摩诃止观009/009原文.txt"
-    audio_path = "摩诃止观-久仁法师/摩诃止观009/摩诃止观009.mp3"
-    chunk_minutes = 5
-    max_workers = 15
-    model_name = "gemini-3-pro-preview"
+    prompt_path = r"摩诃止观-久仁法师/摩诃止观015/015原文.txt"
+    audio_path = "摩诃止观-久仁法师/摩诃止观015/摩诃止观015.mp3"
+    chunk_minutes = 20
+    overlap_minutes=10
+    max_workers = 8
+    model_name = "gemini-3.1-pro-preview"
 
 
     with open(prompt_path, "r", encoding="utf-8") as f:
@@ -107,7 +108,7 @@ if __name__ == "__main__":
     pipeline = BatchAudioTranscriber(
         model_name=model_name,  # 传入模型名
         chunk_minutes=chunk_minutes,
-        overlap_seconds=10,
+        overlap_seconds=overlap_minutes*60,
         temperature=0.1,
         top_p=0.95,
         max_workers=max_workers

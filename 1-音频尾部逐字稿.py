@@ -47,8 +47,8 @@ class AudioTailTranscriber:
 
 
 if __name__ == "__main__":
-    audio_path = "摩诃止观-久仁法师/摩诃止观010/摩诃止观010.mp3"
-    target_minutes = 10
+    audio_path = "摩诃止观-久仁法师/摩诃止观015/摩诃止观015.mp3"
+    target_minutes = 20
     model_name="gemini-3.1-pro-preview"
 
     transcriber = AudioTailTranscriber(model_name=model_name,tail_minutes=target_minutes)
