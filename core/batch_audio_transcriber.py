@@ -87,8 +87,8 @@ if __name__ == "__main__":
         "只输出转录内容，不说多余的话。"
     )
 
-    prompt_path = r"摩诃止观-久仁法师/摩诃止观015/015原文.txt"
-    audio_path = "摩诃止观-久仁法师/摩诃止观015/摩诃止观015.mp3"
+    prompt_path = r"摩诃止观-久仁法师/摩诃止观016/016原文.txt"
+    audio_path = "摩诃止观-久仁法师/摩诃止观016/摩诃止观016.mp3"
     chunk_minutes = 20
     overlap_minutes=10
     max_workers = 8
