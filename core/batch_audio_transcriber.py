@@ -4,7 +4,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
 from core.audio_chunker import AudioChunker
-from core.gemini_asr import GeminiASR
+from core.asr import GeminiASR
 
 
 class BatchAudioTranscriber:

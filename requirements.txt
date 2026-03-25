@@ -2,3 +2,4 @@ pdf2image
 Pillow
 google-genai
 pydub # 音频处理
+openai
