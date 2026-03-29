@@ -212,11 +212,11 @@ if __name__ == "__main__":
     fuzzy_text_path = "摩诃止观-久仁法师/摩诃止观012/012原文模糊范围.txt"
 
     # ---------------- 选择并初始化 ASR 引擎 ----------------
-    asr_engine = MiMoASR(model_name="mimo-v2-omni", temperature=0.1, top_p=0.95)
+    asr_engine = GeminiASR(model_name="gemini-3.1-pro-preview", temperature=0.1, top_p=0.95)
     print(f"已选择 ASR 引擎: {type(asr_engine).__name__}")
 
     # ---------------- 选择并初始化 Text 引擎 ----------------
-    text_engine = MiMoText(model_name="mimo-v2-pro", temperature=0.3)
+    text_engine = GeminiText(model_name="gemini-3.1-pro-preview", temperature=0.3)
     print(f"已选择 Text 引擎: {type(text_engine).__name__}")
 
     # ---------------- 系统提示词 ----------------
