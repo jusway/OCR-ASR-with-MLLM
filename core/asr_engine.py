@@ -13,6 +13,7 @@ from google.genai import types
 # OpenAI SDK (用于兼容 MiMo 等服务)
 import openai
 from openai import OpenAI
+import httpx
 
 
 class AudioCompressor:
@@ -99,34 +100,52 @@ class GeminiASR(BaseASR):
             if os.path.exists(temp_path):
                 os.remove(temp_path)
 
-        while audio_file.state.name == "PROCESSING":
-            time.sleep(2)
-            audio_file = self.client.files.get(name=audio_file.name)
+        try:
+            while audio_file.state.name == "PROCESSING":
+                time.sleep(2)
+                audio_file = self.client.files.get(name=audio_file.name)
 
-        if audio_file.state.name == "FAILED":
-            raise RuntimeError(f"[Gemini] 云端音频文件处理失败: {audio_file.name}")
+            if audio_file.state.name == "FAILED":
+                raise RuntimeError(f"[Gemini] 云端音频文件处理失败: {audio_file.name}")
 
-        config = types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            max_output_tokens=65536,
-        )
+            config = types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                temperature=self.temperature,
+                top_p=self.top_p,
+                max_output_tokens=65536,
+            )
 
-        print("[Gemini] 正在提交给模型处理...")
-        response_stream = self.client.models.generate_content_stream(
-            model=self.model_name,
-            contents=[audio_file, prompt],
-            config=config
-        )
+            max_retries = 5
+            for attempt in range(max_retries):
+                try:
+                    print(f"[Gemini] 正在提交给模型处理 (尝试 {attempt + 1}/{max_retries})...")
+                    response_stream = self.client.models.generate_content_stream(
+                        model=self.model_name,
+                        contents=[audio_file, prompt],
+                        config=config
+                    )
 
-        full_text = ""
-        for chunk in response_stream:
-            text = chunk.text
-            full_text += text
+                    full_text = ""
+                    for chunk in response_stream:
+                        text = chunk.text
+                        full_text += text
 
-        self.client.files.delete(name=audio_file.name)
-        return full_text
+                    return full_text
+                except Exception as e:
+                    # 捕获网络断开、超时等异常
+                    if attempt < max_retries - 1:
+                        wait_time = (2 ** attempt) * 5
+                        print(f"\n[Gemini] 发生网络或API异常 ({type(e).__name__})，等待 {wait_time} 秒后重试...")
+                        time.sleep(wait_time)
+                    else:
+                        print(f"\n[Gemini] 重试次数已达上限，放弃请求。")
+                        raise e
+        finally:
+            # 确保无论成功还是失败，都清理云端的音频文件，防止泄漏和占用空间
+            try:
+                self.client.files.delete(name=audio_file.name)
+            except Exception:
+                pass
 
 
 class MiMoASR(BaseASR):
