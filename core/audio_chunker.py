@@ -42,7 +42,7 @@ class AudioChunker:
 
         generated_files = []
         start = 0
-        index = 0
+        index = 1  # 从 1 开始数数
 
         while start < total_duration:
             end = min(start + self.chunk_ms, total_duration)
