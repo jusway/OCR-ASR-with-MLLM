@@ -11,6 +11,7 @@ from google import genai
 from google.genai import types
 
 # OpenAI SDK (用于兼容 MiMo 等服务)
+import openai
 from openai import OpenAI
 
 
@@ -186,26 +187,39 @@ class MiMoASR(BaseASR):
 
             print("[MiMo] 正在提交给模型处理，采用流式输出...")
 
-            # 官方文档指出 mimo-v2-omni 默认最大 token 是 32768
-            response_stream = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=messages,
-                temperature=self.temperature,
-                top_p=self.top_p,
-                max_tokens=32768,
-                stream=True
-            )
+            max_retries = 6
+            for attempt in range(max_retries):
+                try:
+                    # 官方文档指出 mimo-v2-omni 默认最大 token 是 32768
+                    response_stream = self.client.chat.completions.create(
+                        model=self.model_name,
+                        messages=messages,
+                        temperature=self.temperature,
+                        top_p=self.top_p,
+                        max_tokens=32768,
+                        stream=True
+                    )
 
-            full_text = ""
-            for chunk in response_stream:
-                # 流式处理，获取增量文本
-                if chunk.choices and chunk.choices[0].delta.content:
-                    text_chunk = chunk.choices[0].delta.content
-                    print(text_chunk, end="", flush=True)
-                    full_text += text_chunk
+                    full_text = ""
+                    for chunk in response_stream:
+                        # 流式处理，获取增量文本
+                        if chunk.choices and chunk.choices[0].delta.content:
+                            text_chunk = chunk.choices[0].delta.content
+                            print(text_chunk, end="", flush=True)
+                            full_text += text_chunk
 
-            print()  # 换行
-            return full_text
+                    print()  # 换行
+                    return full_text
+                
+                except openai.RateLimitError as e:
+                    if attempt < max_retries - 1:
+                        wait_time = (2 ** attempt) * 5  # 指数退避: 5s, 10s, 20s, 40s...
+                        print(f"\n[MiMo] 触发并发限制 (429 Too many requests)，等待 {wait_time} 秒后重试 (第 {attempt + 1}/{max_retries} 次)...")
+                        time.sleep(wait_time)
+                    else:
+                        print(f"\n[MiMo] 重试次数已达上限，放弃请求。")
+                        raise e
+
         finally:
             # 清理可能生成的临时压缩文件
             if is_temp and os.path.exists(processed_audio_path):
