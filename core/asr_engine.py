@@ -113,7 +113,7 @@ class GeminiASR(BaseASR):
             max_output_tokens=65536,
         )
 
-        print("[Gemini] 正在提交给模型处理，采用流式输出...")
+        print("[Gemini] 正在提交给模型处理...")
         response_stream = self.client.models.generate_content_stream(
             model=self.model_name,
             contents=[audio_file, prompt],
@@ -123,10 +123,8 @@ class GeminiASR(BaseASR):
         full_text = ""
         for chunk in response_stream:
             text = chunk.text
-            print(text, end="", flush=True)
             full_text += text
 
-        print()  # 换行
         self.client.files.delete(name=audio_file.name)
         return full_text
 
@@ -185,7 +183,7 @@ class MiMoASR(BaseASR):
                 }
             ]
 
-            print("[MiMo] 正在提交给模型处理，采用流式输出...")
+            print("[MiMo] 正在提交给模型处理...")
 
             max_retries = 6
             for attempt in range(max_retries):
@@ -205,10 +203,8 @@ class MiMoASR(BaseASR):
                         # 流式处理，获取增量文本
                         if chunk.choices and chunk.choices[0].delta.content:
                             text_chunk = chunk.choices[0].delta.content
-                            print(text_chunk, end="", flush=True)
                             full_text += text_chunk
 
-                    print()  # 换行
                     return full_text
                 
                 except openai.RateLimitError as e:
