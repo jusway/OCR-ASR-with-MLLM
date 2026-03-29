@@ -207,12 +207,28 @@ if __name__ == "__main__":
     fuzzy_text_path = "摩诃止观-久仁法师/摩诃止观012/012原文模糊范围.txt"
 
     # ---------------- 选择并初始化 ASR 引擎 ----------------
-    asr_engine = GeminiASR(model_name="gemini-3.1-pro-preview", temperature=0.1, top_p=0.95)
-    print(f"已选择 ASR 引擎: {type(asr_engine).__name__}")
+    print("请选择 ASR (语音识别) 引擎:")
+    print("1. Gemini (gemini-3.1-pro-preview)")
+    print("2. MiMo (mimo-v2-omni)")
+    asr_choice = input("请输入选项 (1 或 2，默认 1): ").strip()
+    
+    if asr_choice == "2":
+        asr_engine = MiMoASR(model_name="mimo-v2-omni", temperature=0.1, top_p=0.95)
+    else:
+        asr_engine = GeminiASR(model_name="gemini-3.1-pro-preview", temperature=0.1, top_p=0.95)
+    print(f"已选择 ASR 引擎: {type(asr_engine).__name__}\n")
 
     # ---------------- 选择并初始化 Text 引擎 ----------------
-    text_engine = GeminiText(model_name="gemini-3.1-pro-preview", temperature=0.3)
-    print(f"已选择 Text 引擎: {type(text_engine).__name__}")
+    print("请选择 Text (文本处理) 引擎:")
+    print("1. Gemini (gemini-3.1-pro-preview)")
+    print("2. MiMo (mimo-v2-pro)")
+    text_choice = input("请输入选项 (1 或 2，默认 1): ").strip()
+    
+    if text_choice == "2":
+        text_engine = MiMoText(model_name="mimo-v2-pro", temperature=0.3)
+    else:
+        text_engine = GeminiText(model_name="gemini-3.1-pro-preview", temperature=0.3)
+    print(f"已选择 Text 引擎: {type(text_engine).__name__}\n")
 
     # ---------------- 系统提示词 ----------------
     locator_system_prompt = (
