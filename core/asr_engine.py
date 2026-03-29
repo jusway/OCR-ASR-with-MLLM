@@ -114,56 +114,85 @@ class MiMoASR(BaseASR):
     def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
         print(f"[MiMo] 正在读取并编码音频文件: {audio_file_path}")
 
-        # 根据扩展名获取格式，常见的为 mp3 或 wav
-        audio_ext = os.path.splitext(audio_file_path)[-1].lower().replace(".", "")
-        if audio_ext not in ['mp3', 'wav']:
-            print(f"⚠️ 警告: 未知格式 '{audio_ext}'，使用 'wav' 作为默认兼容格式。")
-            audio_ext = "wav"
+        temp_compressed_path = None
+        try:
+            # 检查文件大小，如果超过 30MB 则进行压缩，以防 Base64 编码后超过 50MB 限制
+            file_size = os.path.getsize(audio_file_path)
+            max_size = 30 * 1024 * 1024  # 30 MB
 
-        # 读取音频并编码为 Base64
-        with open(audio_file_path, "rb") as audio_file:
-            audio_base64 = base64.b64encode(audio_file.read()).decode('utf-8')
+            if file_size > max_size:
+                print(f"[MiMo] 音频文件过大 ({file_size / 1024 / 1024:.2f} MB)，正在压缩以符合 50MB Base64 限制...")
+                try:
+                    from pydub import AudioSegment
+                except ImportError:
+                    raise RuntimeError("需要安装 pydub 来压缩过大的音频文件。请运行 `pip install pydub`。")
+                
+                audio = AudioSegment.from_file(audio_file_path)
+                # 转换为单声道，降低采样率，以大幅减小文件体积
+                audio = audio.set_channels(1).set_frame_rate(16000)
+                
+                fd, temp_compressed_path = tempfile.mkstemp(suffix=".mp3")
+                os.close(fd)
+                
+                # 导出为低比特率的 mp3
+                audio.export(temp_compressed_path, format="mp3", bitrate="32k")
+                audio_file_path = temp_compressed_path
+                print(f"[MiMo] 压缩完成，新文件大小: {os.path.getsize(audio_file_path) / 1024 / 1024:.2f} MB")
 
-        # 构建 OpenAI 兼容格式的消息
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {
-                        "type": "input_audio",
-                        "input_audio": {
-                            "data": audio_base64,
-                            "format": audio_ext
+            # 根据扩展名获取格式，常见的为 mp3 或 wav
+            audio_ext = os.path.splitext(audio_file_path)[-1].lower().replace(".", "")
+            if audio_ext not in ['mp3', 'wav']:
+                print(f"⚠️ 警告: 未知格式 '{audio_ext}'，使用 'wav' 作为默认兼容格式。")
+                audio_ext = "wav"
+
+            # 读取音频并编码为 Base64
+            with open(audio_file_path, "rb") as audio_file:
+                audio_base64 = base64.b64encode(audio_file.read()).decode('utf-8')
+
+            # 构建 OpenAI 兼容格式的消息
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "input_audio",
+                            "input_audio": {
+                                "data": audio_base64,
+                                "format": audio_ext
+                            }
                         }
-                    }
-                ]
-            }
-        ]
+                    ]
+                }
+            ]
 
-        print("[MiMo] 正在提交给模型处理，采用流式输出...")
+            print("[MiMo] 正在提交给模型处理，采用流式输出...")
 
-        # 官方文档指出 mimo-v2-omni 默认最大 token 是 32768
-        response_stream = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            max_tokens=32768,
-            stream=True
-        )
+            # 官方文档指出 mimo-v2-omni 默认最大 token 是 32768
+            response_stream = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                temperature=self.temperature,
+                top_p=self.top_p,
+                max_tokens=32768,
+                stream=True
+            )
 
-        full_text = ""
-        for chunk in response_stream:
-            # 流式处理，获取增量文本
-            if chunk.choices and chunk.choices[0].delta.content:
-                text_chunk = chunk.choices[0].delta.content
-                print(text_chunk, end="", flush=True)
-                full_text += text_chunk
+            full_text = ""
+            for chunk in response_stream:
+                # 流式处理，获取增量文本
+                if chunk.choices and chunk.choices[0].delta.content:
+                    text_chunk = chunk.choices[0].delta.content
+                    print(text_chunk, end="", flush=True)
+                    full_text += text_chunk
 
-        print()  # 换行
-        return full_text
+            print()  # 换行
+            return full_text
+        finally:
+            # 清理可能生成的临时压缩文件
+            if temp_compressed_path and os.path.exists(temp_compressed_path):
+                os.remove(temp_compressed_path)
 
 
 if __name__ == "__main__":
