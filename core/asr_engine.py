@@ -215,6 +215,15 @@ class MiMoASR(BaseASR):
                     else:
                         print(f"\n[MiMo] 重试次数已达上限，放弃请求。")
                         raise e
+                except openai.BadRequestError as e:
+                    error_msg = str(e)
+                    # 捕获内容风控拦截 (Moderation Block / 421)
+                    if '421' in error_msg or 'content_filter' in error_msg or 'Moderation Block' in error_msg:
+                        print(f"\n[MiMo] ⚠️ 警告: 该片段触发了 API 的安全审核策略 (Moderation Block)，已被拦截。将跳过此片段。")
+                        return "\n[⚠️ 此片段内容被 API 安全策略拦截，无法转录]\n"
+                    else:
+                        # 其他的 BadRequestError 正常抛出
+                        raise e
 
         finally:
             # 清理可能生成的临时压缩文件
