@@ -2,7 +2,7 @@ import os
 import uuid
 from pathlib import Path
 from pydub import AudioSegment
-from core.asr import GeminiASR
+from core.asr_engine import GeminiASR
 
 
 class AudioTailTranscriber:

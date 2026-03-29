@@ -3,7 +3,7 @@ import os
 import uuid
 from pathlib import Path
 from pydub import AudioSegment
-from core.asr import GeminiASR
+from core.asr_engine import GeminiASR
 
 class AudioTailTextLocator:
     def __init__(self, model_name, tail_minutes=20, temperature=0.1, top_p=0.95):

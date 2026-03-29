@@ -1,55 +1,107 @@
 import os
-import uuid
 from pathlib import Path
 from pydub import AudioSegment
+from concurrent.futures import ThreadPoolExecutor
+import os
+import threading
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
+from core.audio_chunker import AudioChunker
+from core.asr_engine import GeminiASR
 # 假设这些是你核心库的导入
-from core.asr import GeminiASR
-from core.batch_audio_transcriber import BatchAudioTranscriber
-from core.gemini_text import GeminiText
+from core.asr_engine import BaseASR, GeminiASR, MiMoASR
+from core.text_to_text_engine import BaseTextModel, GeminiText, MiMoText
 
 
-class AudioTailTextLocator:
-    """用于根据音频尾部定位原文范围的工具类"""
+class BatchAudioTranscriber:
+    """
+    批量音频转录器：负责将长音频切片并并发调用 ASR 引擎。
+    """
 
-    def __init__(self, model_name, tail_minutes=20, temperature=0.1, top_p=0.95):
-        self.asr = GeminiASR(temperature=temperature, top_p=top_p, model_name=model_name)
-        self.tail_minutes = tail_minutes
+    def __init__(self, asr_engine: BaseASR, chunk_minutes=3, overlap_seconds=10, max_workers=3):
+        # 直接注入引擎实例
+        self.asr = asr_engine
+        self.chunk_minutes = chunk_minutes
+        self.overlap_seconds = overlap_seconds
+        self.chunker = AudioChunker(chunk_minutes=chunk_minutes, overlap_seconds=overlap_seconds)
+        self.max_workers = max_workers
+        self.lock = threading.Lock()
+        self.completed_count = 0
 
-    def _extract_tail(self, audio_path: str) -> str:
-        audio = AudioSegment.from_file(audio_path)
-        tail_ms = self.tail_minutes * 60 * 1000
+    def _process_single_chunk(self, chunk_file, chunk_index, system_prompt, prompt, total_chunks):
+        chunk_path = Path(chunk_file)
+        md_file = chunk_path.with_suffix('.md')
 
-        if len(audio) < tail_ms:
-            chunk = audio
-        else:
-            chunk = audio[-tail_ms:]
+        # 缓存机制：如果已经存在转录好的 md 文件则直接跳过
+        if md_file.exists():
+            with self.lock:
+                self.completed_count += 1
+                current_count = self.completed_count
+            print(f"--- [缓存] 已完成 {current_count}/{total_chunks}: {md_file.name} ---")
+            with open(md_file, "r", encoding="utf-8") as f:
+                return f.read(), chunk_file
 
-        out_path = f"temp_tail_{uuid.uuid4().hex}.mp3"
-        chunk.export(out_path, format="mp3")
-        return out_path
+        # 调用注入的 ASR 引擎的 recognize 方法
+        chunk_text = self.asr.recognize(system_prompt, prompt, chunk_file)
 
-    def process(self, audio_path: str, text_path: str) -> str:
-        temp_audio_path = self._extract_tail(audio_path)
+        header = f"# 片段 {chunk_index + 1}/{total_chunks}\n\n"
+        final_content = header + chunk_text
 
+        with open(md_file, "w", encoding="utf-8") as f:
+            f.write(final_content)
+
+        with self.lock:
+            self.completed_count += 1
+            current_count = self.completed_count
+        print(f"--- [进度] 已完成 {current_count}/{total_chunks} 个片段 ---")
+
+        return final_content, chunk_file
+
+    def process_full_audio(self, audio_path, system_prompt, prompt):
+        self.completed_count = 0
+        audio_path_obj = Path(audio_path)
+        chunk_output_dir = audio_path_obj.parent / f"{audio_path_obj.stem}_chunks_{self.chunk_minutes}m"
+        os.makedirs(chunk_output_dir, exist_ok=True)
+
+        # 物理切分音频
+        chunk_files = self.chunker.process(audio_path, output_dir=str(chunk_output_dir))
+        total_chunks = len(chunk_files)
+
+        full_transcription = ""
+
+        # 使用线程池并发执行 ASR 请求
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = []
+            for i, chunk_file in enumerate(chunk_files):
+                future = executor.submit(
+                    self._process_single_chunk, chunk_file, i, system_prompt, prompt, total_chunks
+                )
+                futures.append(future)
+
+            # 按顺序获取结果，保证最终文本逻辑连贯
+            for future in futures:
+                chunk_text, _ = future.result()
+                full_transcription += chunk_text + "\n\n---\n\n"
+
+        return full_transcription
+
+class AudioTextLocator:
+    """用于根据完整音频定位原文范围的工具类"""
+
+    def __init__(self, asr_engine: BaseASR):
+        self.asr = asr_engine
+
+    def process(self, audio_path: str, text_path: str, system_prompt: str) -> str:
+        # 读取模糊范围的原文
         with open(text_path, "r", encoding="utf-8") as f:
             reference_text = f.read()
 
-        system_prompt = (
-            "你是一位资深的佛法音频校对助手。"
-            "听取提供的音频，并阅读提供的【原文模糊范围】。"
-            "请精准定位并输出这段音频刚好在讲解【原文模糊范围】中的哪一部分。"
-            "只输出这段原文文本。"
-            "不要说多余的话。"
-        )
-
         prompt = f"【原文模糊范围】\n{reference_text}"
 
-        print(f"正在截取音频最后 {self.tail_minutes} 分钟并提交给模型定位...")
-        location_result = self.asr.recognize(system_prompt, prompt, temp_audio_path)
-
-        if os.path.exists(temp_audio_path):
-            os.remove(temp_audio_path)
+        print(f"正在提交完整音频给模型进行原文定位...")
+        # 直接使用传入的系统提示词和完整的音频路径
+        location_result = self.asr.recognize(system_prompt, prompt, audio_path)
 
         return location_result
 
@@ -57,9 +109,10 @@ class AudioTailTextLocator:
 class AudioProcessingPipeline:
     """端到端音频处理流水线：定位 -> 转录 -> 书面化"""
 
-    def __init__(self, model_name, target_minutes=600, chunk_minutes=20, overlap_minutes=10, max_workers=8):
-        self.model_name = model_name
-        self.target_minutes = target_minutes
+    def __init__(self, asr_engine: BaseASR, text_engine: BaseTextModel, chunk_minutes=20,
+                 overlap_minutes=10, max_workers=8):
+        self.asr_engine = asr_engine
+        self.text_engine = text_engine
         self.chunk_minutes = chunk_minutes
         self.overlap_minutes = overlap_minutes
         self.max_workers = max_workers
@@ -71,12 +124,11 @@ class AudioProcessingPipeline:
         minutes, seconds = divmod(remainder, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-    def run(self, audio_path, fuzzy_text_path, asr_sys_prompt, text_sys_prompt):
+    def run(self, audio_path, fuzzy_text_path, locator_sys_prompt, asr_sys_prompt, text_sys_prompt):
         audio_path_obj = Path(audio_path)
         base_name = audio_path_obj.stem
         parent_dir = audio_path_obj.parent
 
-        # 定义所有输出文件的路径
         located_text_filename = parent_dir / f"{base_name}_原文定位.md"
         transcript_filename = parent_dir / f"{base_name}_逐字稿.md"
         final_output_filename = parent_dir / f"{base_name}_书面稿.md"
@@ -85,8 +137,9 @@ class AudioProcessingPipeline:
         # 步骤 1: 原文精准定位
         # ==========================================
         print("\n[1/3] 开始进行原文精准定位...")
-        locator = AudioTailTextLocator(model_name=self.model_name, tail_minutes=self.target_minutes)
-        localized_text = locator.process(audio_path, fuzzy_text_path)
+        locator = AudioTextLocator(asr_engine=self.asr_engine)
+        # 传入外部定义的 locator_sys_prompt
+        localized_text = locator.process(audio_path, fuzzy_text_path, locator_sys_prompt)
 
         with open(located_text_filename, "w", encoding="utf-8") as f:
             f.write(localized_text)
@@ -99,11 +152,9 @@ class AudioProcessingPipeline:
         asr_prompt = f"\n    【原典参考】\n    {localized_text}\n    "
 
         transcriber = BatchAudioTranscriber(
-            model_name=self.model_name,
+            asr_engine=self.asr_engine,
             chunk_minutes=self.chunk_minutes,
             overlap_seconds=self.overlap_minutes * 60,
-            temperature=0.1,
-            top_p=0.95,
             max_workers=self.max_workers
         )
 
@@ -116,11 +167,10 @@ class AudioProcessingPipeline:
         # ==========================================
         # 步骤 3: 整理为书面稿
         # ==========================================
-        print("\n[3/3] 正在将逐字稿整理为书面稿，请耐心等待...")
-        text_bot = GeminiText(model_name=self.model_name, temperature=0.3)
+        print(f"\n[3/3] 正在使用 {self.text_engine.model_name} 将逐字稿整理为书面稿，请耐心等待...")
         user_prompt = f"\n【原典参考】\n{localized_text}\n\n【总逐字稿】\n{transcript_text}\n"
 
-        written_text = text_bot.generate(text_sys_prompt, user_prompt)
+        written_text = self.text_engine.generate(text_sys_prompt, user_prompt)
 
         # ==========================================
         # 步骤 4: 人工补充元数据并生成最终文档
@@ -158,11 +208,27 @@ class AudioProcessingPipeline:
 
 if __name__ == "__main__":
     # ---------------- 基础配置 ----------------
-    model_name = "gemini-3-pro-preview"
     audio_path = "摩诃止观-久仁法师/摩诃止观012/摩诃止观012.mp3"
     fuzzy_text_path = "摩诃止观-久仁法师/摩诃止观012/012原文模糊范围.txt"
 
+    # ---------------- 选择并初始化 ASR 引擎 ----------------
+    asr_engine = MiMoASR(model_name="mimo-v2-omni", temperature=0.1, top_p=0.95)
+    print(f"已选择 ASR 引擎: {type(asr_engine).__name__}")
+
+    # ---------------- 选择并初始化 Text 引擎 ----------------
+    text_engine = MiMoText(model_name="mimo-v2-pro", temperature=0.3)
+    print(f"已选择 Text 引擎: {type(text_engine).__name__}")
+
     # ---------------- 系统提示词 ----------------
+    # 【新增】将原文定位的 Prompt 提取到外部
+    locator_system_prompt = (
+        "你是一位资深的佛法音频校对助手。"
+        "听取提供的音频，并阅读提供的【原文模糊范围】。"
+        "请精准定位并输出这段音频刚好在讲解【原文模糊范围】中的哪一部分。"
+        "只输出这段原文文本。"
+        "不要说多余的话。"
+    )
+
     asr_system_prompt = (
         "你是一位资深的佛法音频转录工作的出家比丘大师。"
         "将用户提供的音频准确转录为逐字稿。"
@@ -188,16 +254,18 @@ if __name__ == "__main__":
 
     # ---------------- 运行流水线 ----------------
     pipeline = AudioProcessingPipeline(
-        model_name=model_name,
-        target_minutes=600,  # 用于原文定位截取的时长，可以取很大的数超过音频时长
-        chunk_minutes=10,  # 音频切分时长
-        overlap_minutes=5,  # 音频重叠时长
-        max_workers=12  # 并发数
+        asr_engine=asr_engine,
+        text_engine=text_engine,
+        #移除了 target_minutes
+        chunk_minutes=10,
+        overlap_minutes=5,
+        max_workers=12
     )
 
     pipeline.run(
         audio_path=audio_path,
         fuzzy_text_path=fuzzy_text_path,
+        locator_sys_prompt=locator_system_prompt, # 传入定位专用的 Prompt
         asr_sys_prompt=asr_system_prompt,
         text_sys_prompt=text_system_prompt
     )
