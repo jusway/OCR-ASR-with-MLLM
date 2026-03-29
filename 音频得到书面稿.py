@@ -27,20 +27,26 @@ class BatchAudioTranscriber:
     def _process_single_chunk(self, chunk_file, chunk_index, system_prompt, prompt, total_chunks):
         chunk_path = Path(chunk_file)
         md_file = chunk_path.with_suffix('.md')
+        header = f"# 片段 {chunk_index + 1}/{total_chunks}\n\n"
 
         # 缓存机制：如果已经存在转录好的 md 文件则直接跳过
         if md_file.exists():
-            with self.lock:
-                self.completed_count += 1
-                current_count = self.completed_count
-            print(f"--- [缓存] 已完成 {current_count}/{total_chunks}: {md_file.name} ---")
             with open(md_file, "r", encoding="utf-8") as f:
-                return f.read(), chunk_file
+                cached_content = f.read()
+            
+            # 检查缓存是否有效（内容长度大于 header 长度，说明有实际转录文本）
+            if len(cached_content.strip()) > len(header.strip()):
+                with self.lock:
+                    self.completed_count += 1
+                    current_count = self.completed_count
+                print(f"--- [缓存] 已完成 {current_count}/{total_chunks}: {md_file.name} ---")
+                return cached_content, chunk_file
+            else:
+                print(f"--- [缓存无效] 发现不完整的缓存文件 {md_file.name}，准备重新转录 ---")
 
         # 调用注入的 ASR 引擎的 recognize 方法
         chunk_text = self.asr.recognize(system_prompt, prompt, chunk_file)
 
-        header = f"# 片段 {chunk_index + 1}/{total_chunks}\n\n"
         final_content = header + chunk_text
 
         with open(md_file, "w", encoding="utf-8") as f:
