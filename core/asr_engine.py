@@ -37,13 +37,16 @@ class AudioCompressor:
             raise RuntimeError("需要安装 pydub 来压缩过大的音频文件。请运行 `pip install pydub`。")
         
         audio = AudioSegment.from_file(audio_path)
-        # 转换为单声道，降低采样率，以大幅减小文件体积
+        
+        # 压缩原理说明：
+        # 1. set_channels(1): 转换为单声道，去除立体声的冗余数据。
+        # 2. set_frame_rate(16000): 降低采样率到 16kHz，保留人声频段，丢弃无用的高频细节。
         audio = audio.set_channels(1).set_frame_rate(16000)
         
         fd, temp_compressed_path = tempfile.mkstemp(suffix=".mp3")
         os.close(fd)
         
-        # 导出为低比特率的 mp3
+        # 3. bitrate="32k": 使用 MP3 有损压缩，并限制极低的比特率（32kbps），在保证语音可辨识的前提下极限压缩体积。
         audio.export(temp_compressed_path, format="mp3", bitrate="32k")
         print(f"[AudioCompressor] 压缩完成，新文件大小: {os.path.getsize(temp_compressed_path) / 1024 / 1024:.2f} MB")
         
