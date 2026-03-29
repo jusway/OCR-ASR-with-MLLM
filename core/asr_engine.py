@@ -14,6 +14,42 @@ from google.genai import types
 from openai import OpenAI
 
 
+class AudioCompressor:
+    """
+    音频压缩工具类，用于处理过大的音频文件。
+    """
+    @staticmethod
+    def compress_if_needed(audio_path: str, max_size_mb: int = 50) -> tuple[str, bool]:
+        """
+        检查音频文件大小，如果超过指定阈值则进行压缩。
+        返回: (处理后的音频路径, 是否生成了临时文件)
+        """
+        file_size = os.path.getsize(audio_path)
+        max_size_bytes = max_size_mb * 1024 * 1024
+
+        if file_size <= max_size_bytes:
+            return audio_path, False
+
+        print(f"[AudioCompressor] 音频文件过大 ({file_size / 1024 / 1024:.2f} MB)，超过 {max_size_mb}MB 阈值，正在压缩...")
+        try:
+            from pydub import AudioSegment
+        except ImportError:
+            raise RuntimeError("需要安装 pydub 来压缩过大的音频文件。请运行 `pip install pydub`。")
+        
+        audio = AudioSegment.from_file(audio_path)
+        # 转换为单声道，降低采样率，以大幅减小文件体积
+        audio = audio.set_channels(1).set_frame_rate(16000)
+        
+        fd, temp_compressed_path = tempfile.mkstemp(suffix=".mp3")
+        os.close(fd)
+        
+        # 导出为低比特率的 mp3
+        audio.export(temp_compressed_path, format="mp3", bitrate="32k")
+        print(f"[AudioCompressor] 压缩完成，新文件大小: {os.path.getsize(temp_compressed_path) / 1024 / 1024:.2f} MB")
+        
+        return temp_compressed_path, True
+
+
 class BaseASR(ABC):
     """
     ASR (语音识别) 抽象基类，规范统一的调用接口。
@@ -114,39 +150,17 @@ class MiMoASR(BaseASR):
     def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
         print(f"[MiMo] 正在读取并编码音频文件: {audio_file_path}")
 
-        temp_compressed_path = None
+        processed_audio_path, is_temp = AudioCompressor.compress_if_needed(audio_file_path, max_size_mb=50)
+
         try:
-            # 检查文件大小，如果超过 30MB 则进行压缩，以防 Base64 编码后超过 50MB 限制
-            file_size = os.path.getsize(audio_file_path)
-            max_size = 30 * 1024 * 1024  # 30 MB
-
-            if file_size > max_size:
-                print(f"[MiMo] 音频文件过大 ({file_size / 1024 / 1024:.2f} MB)，正在压缩以符合 50MB Base64 限制...")
-                try:
-                    from pydub import AudioSegment
-                except ImportError:
-                    raise RuntimeError("需要安装 pydub 来压缩过大的音频文件。请运行 `pip install pydub`。")
-                
-                audio = AudioSegment.from_file(audio_file_path)
-                # 转换为单声道，降低采样率，以大幅减小文件体积
-                audio = audio.set_channels(1).set_frame_rate(16000)
-                
-                fd, temp_compressed_path = tempfile.mkstemp(suffix=".mp3")
-                os.close(fd)
-                
-                # 导出为低比特率的 mp3
-                audio.export(temp_compressed_path, format="mp3", bitrate="32k")
-                audio_file_path = temp_compressed_path
-                print(f"[MiMo] 压缩完成，新文件大小: {os.path.getsize(audio_file_path) / 1024 / 1024:.2f} MB")
-
             # 根据扩展名获取格式，常见的为 mp3 或 wav
-            audio_ext = os.path.splitext(audio_file_path)[-1].lower().replace(".", "")
+            audio_ext = os.path.splitext(processed_audio_path)[-1].lower().replace(".", "")
             if audio_ext not in ['mp3', 'wav']:
                 print(f"⚠️ 警告: 未知格式 '{audio_ext}'，使用 'wav' 作为默认兼容格式。")
                 audio_ext = "wav"
 
             # 读取音频并编码为 Base64
-            with open(audio_file_path, "rb") as audio_file:
+            with open(processed_audio_path, "rb") as audio_file:
                 audio_base64 = base64.b64encode(audio_file.read()).decode('utf-8')
 
             # 构建 OpenAI 兼容格式的消息
@@ -191,8 +205,8 @@ class MiMoASR(BaseASR):
             return full_text
         finally:
             # 清理可能生成的临时压缩文件
-            if temp_compressed_path and os.path.exists(temp_compressed_path):
-                os.remove(temp_compressed_path)
+            if is_temp and os.path.exists(processed_audio_path):
+                os.remove(processed_audio_path)
 
 
 if __name__ == "__main__":
