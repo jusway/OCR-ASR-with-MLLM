@@ -3,3 +3,4 @@ Pillow
 google-genai
 pydub # 音频处理
 openai
+oss2

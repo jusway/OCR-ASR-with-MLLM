@@ -112,8 +112,8 @@ if __name__ == "__main__":
         "只输出文稿内容，不说多余的话。"
     )
 
-    prompt_path = r"摩诃止观-久仁法师/摩诃止观019/摩诃止观019_原文定位.md"
-    audio_path = "摩诃止观-久仁法师/摩诃止观019/摩诃止观019.mp3"
+    prompt_path = r"../摩诃止观-久仁法师/摩诃止观019/摩诃止观019_原文定位.md"
+    audio_path = "../摩诃止观-久仁法师/摩诃止观019/摩诃止观019.mp3"
     model_name = "gemini-3.1-pro-preview"
 
     pipeline = AudioProcessingPipeline(

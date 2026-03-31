@@ -4,8 +4,8 @@ from pathlib import Path
 from pydub import AudioSegment
 from concurrent.futures import ThreadPoolExecutor
 
-from core.audio_chunker import AudioChunker
-from core.asr_engine import BaseASR, GeminiASR, MiMoASR
+from core.utils import AudioChunker
+from core.asr_engine import BaseASR, GeminiASR, MiMoASR, QwenASR
 from core.text_to_text_engine import BaseTextModel, GeminiText, MiMoText
 
 
@@ -88,21 +88,61 @@ class BatchAudioTranscriber:
         return full_transcription
 
 class AudioTextLocator:
-    """用于根据完整音频定位原文范围的工具类"""
+    """
+    通过截取音频首尾片段分别 ASR 转录，再用文本模型定位原文范围。
+    避免将完整音频一次性提交给模型。
+    """
 
-    def __init__(self, asr_engine: BaseASR):
+    def __init__(self, asr_engine: BaseASR, text_engine: BaseTextModel, excerpt_minutes: int = 15):
         self.asr = asr_engine
+        self.text_engine = text_engine
+        self.excerpt_minutes = excerpt_minutes
 
-    def process(self, audio_path: str, text_path: str, system_prompt: str) -> str:
+    def process(self, audio_path: str, text_path: str, output_dir: str,
+                asr_sys_prompt: str, locator_sys_prompt: str) -> str:
         # 读取模糊范围的原文
         with open(text_path, "r", encoding="utf-8") as f:
             reference_text = f.read()
 
-        prompt = f"【原文模糊范围】\n{reference_text}"
+        # --------------------------------------------------
+        # 步骤 1: 截取音频的前 N 分钟和后 N 分钟
+        # --------------------------------------------------
+        print(f"  截取音频前 {self.excerpt_minutes} 分钟和后 {self.excerpt_minutes} 分钟...")
+        head_path, tail_path = AudioChunker.extract_head_tail(
+            audio_path, output_dir=output_dir, minutes=self.excerpt_minutes
+        )
 
-        print(f"正在提交完整音频给模型进行原文定位...")
-        # 直接使用传入的系统提示词和完整的音频路径
-        location_result = self.asr.recognize(system_prompt, prompt, audio_path)
+        # --------------------------------------------------
+        # 步骤 2: 分别对首尾片段进行 ASR 转录
+        # --------------------------------------------------
+        asr_prompt = f"【原典参考】\n{reference_text}"
+
+        print(f"  正在转录音频开头片段...")
+        head_transcript = self.asr.recognize(asr_sys_prompt, asr_prompt, head_path)
+
+        print(f"  正在转录音频结尾片段...")
+        tail_transcript = self.asr.recognize(asr_sys_prompt, asr_prompt, tail_path)
+
+        # 保存中间文件
+        head_md = Path(output_dir) / "head_转录稿.md"
+        tail_md = Path(output_dir) / "tail_转录稿.md"
+        with open(head_md, "w", encoding="utf-8") as f:
+            f.write(head_transcript)
+        with open(tail_md, "w", encoding="utf-8") as f:
+            f.write(tail_transcript)
+        print(f"  首尾转录稿已保存: {head_md.name}, {tail_md.name}")
+
+        # --------------------------------------------------
+        # 步骤 3: 用文本模型根据两段转录稿定位原文范围
+        # --------------------------------------------------
+        print(f"  正在使用 {self.text_engine.model_name} 定位原文范围...")
+        locate_prompt = (
+            f"【原文模糊范围】\n{reference_text}\n\n"
+            f"【音频开头转录稿】\n{head_transcript}\n\n"
+            f"【音频结尾转录稿】\n{tail_transcript}"
+        )
+
+        location_result = self.text_engine.generate(locator_sys_prompt, locate_prompt)
 
         return location_result
 
@@ -111,12 +151,13 @@ class AudioProcessingPipeline:
     """端到端音频处理流水线：定位 -> 转录 -> 书面化"""
 
     def __init__(self, asr_engine: BaseASR, text_engine: BaseTextModel, chunk_minutes=20,
-                 overlap_minutes=10, max_workers=8):
+                 overlap_minutes=10, max_workers=8, excerpt_minutes=15):
         self.asr_engine = asr_engine
         self.text_engine = text_engine
         self.chunk_minutes = chunk_minutes
         self.overlap_minutes = overlap_minutes
         self.max_workers = max_workers
+        self.excerpt_minutes = excerpt_minutes
 
     def _get_audio_duration(self, audio_path):
         audio = AudioSegment.from_mp3(audio_path)
@@ -138,9 +179,16 @@ class AudioProcessingPipeline:
         # 步骤 1: 原文精准定位
         # ==========================================
         print("\n[1/3] 开始进行原文精准定位...")
-        locator = AudioTextLocator(asr_engine=self.asr_engine)
-        # 传入外部定义的 locator_sys_prompt
-        localized_text = locator.process(audio_path, fuzzy_text_path, locator_sys_prompt)
+        excerpt_dir = parent_dir / f"{base_name}_locator_excerpts"
+        locator = AudioTextLocator(
+            asr_engine=self.asr_engine,
+            text_engine=self.text_engine,
+            excerpt_minutes=self.excerpt_minutes
+        )
+        localized_text = locator.process(
+            audio_path, fuzzy_text_path, output_dir=str(excerpt_dir),
+            asr_sys_prompt=asr_sys_prompt, locator_sys_prompt=locator_sys_prompt
+        )
 
         with open(located_text_filename, "w", encoding="utf-8") as f:
             f.write(localized_text)
@@ -216,10 +264,13 @@ if __name__ == "__main__":
     print("请选择 ASR (语音识别) 引擎:")
     print("1. Gemini (gemini-3.1-pro-preview)")
     print("2. MiMo (mimo-v2-omni)")
-    asr_choice = input("请输入选项 (1 或 2，默认 1): ").strip()
-    
+    print("3. Qwen (qwen3.5-omni-plus)")
+    asr_choice = input("请输入选项 (1/2/3，默认 1): ").strip()
+
     if asr_choice == "2":
         asr_engine = MiMoASR(model_name="mimo-v2-omni", temperature=0.1, top_p=0.95)
+    elif asr_choice == "3":
+        asr_engine = QwenASR(model_name="qwen3.5-omni-plus", temperature=0.1, top_p=0.95)
     else:
         asr_engine = GeminiASR(model_name="gemini-3.1-pro-preview", temperature=0.1, top_p=0.95)
     print(f"已选择 ASR 引擎: {type(asr_engine).__name__}\n")
@@ -238,15 +289,18 @@ if __name__ == "__main__":
 
     # ---------------- 系统提示词 ----------------
     locator_system_prompt = (
-        "你是一位资深的佛法音频校对助手。"
-        "听取提供的音频，并阅读提供的【原文模糊范围】。"
-        "请精准定位并输出这段音频刚好在讲解【原文模糊范围】中的哪一部分。"
-        "只输出这段原文文本。"
-        "不要说多余的话。"
+        # 角色
+        "你是一位资深的佛法原文定位助手。"
+        # 任务
+        "你会收到一段音频的【开头转录稿】和【结尾转录稿】，以及对应的【原文模糊范围】。"
+        "请根据开头和结尾的转录内容，精准判断这段音频讲解的是原文中的哪一部分。"
+        # 输出规范
+        "只输出从开始到结束的那部分【原文模糊范围】的文本。"
+        "不要输出转录稿中没有讲到的原文。"
     )
 
     asr_system_prompt = (
-        "你是一位资深的佛法音频转录工作的出家比丘大师。"
+        "您是一位资深的佛法音频转录工作的出家比丘大师。"
         "将用户提供的音频准确转录为逐字稿。"
         "保留所有的停顿、口语化表达和重复等所有内容，对音频语音完全忠实。"
         "严格按照用户提供的【原典参考】校对专有名词。"
@@ -255,14 +309,18 @@ if __name__ == "__main__":
     )
 
     text_system_prompt = (
-        "你是一位资深的佛学逐字录音稿整理的比丘师父。"
+        # 角色
+        "您是一位资深的佛学逐字录音稿整理的比丘师父。"
+        # 任务
         "有一个讲法长音频，切分成多个短音频，相邻的短音频互有重叠，分配给了多个义工去做了语音转录，拼接汇总成了总逐字稿。"
-        "你的任务是将得到的总逐字稿整理成书面文稿。"
+        "您的任务是将得到的总逐字稿整理成书面文稿。"
+        # 要求注意
         "风格要大白话、详细，但尽量使再笨的人也能看懂。"
         "讲法者提到的原典文，务必参照【原典参考】进行校对。"
         "引用原典时候使用『』符号框住。"
         "禁止使用md格式。"
         "根据大意自然分段即可。"
+        # 信息规范
         "义工的逐字稿可能会听写有误，遇到可能是谬误的字词，酌情改正。"
         "不丢失任何总逐字稿的信息，也不能自行添加没说的信息。"
         "只输出文稿内容，不说多余的话。"
@@ -272,7 +330,6 @@ if __name__ == "__main__":
     pipeline = AudioProcessingPipeline(
         asr_engine=asr_engine,
         text_engine=text_engine,
-        #移除了 target_minutes
         chunk_minutes=10,
         overlap_minutes=5,
         max_workers=12

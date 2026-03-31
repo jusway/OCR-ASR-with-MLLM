@@ -5,7 +5,7 @@ import concurrent.futures
 import threading
 import requests
 
-from core.gemini_ocr import GeminiOCR
+from core.ocr_engine import GeminiOCR
 from core.pdf_loader import PDFLoader
 
 

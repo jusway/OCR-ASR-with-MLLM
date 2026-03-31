@@ -15,44 +15,7 @@ import openai
 from openai import OpenAI
 import httpx
 
-
-class AudioCompressor:
-    """
-    音频压缩工具类，用于处理过大的音频文件。
-    """
-    @staticmethod
-    def compress_if_needed(audio_path: str, max_size_mb: int = 50) -> tuple[str, bool]:
-        """
-        检查音频文件大小，如果超过指定阈值则进行压缩。
-        返回: (处理后的音频路径, 是否生成了临时文件)
-        """
-        file_size = os.path.getsize(audio_path)
-        max_size_bytes = max_size_mb * 1024 * 1024
-
-        if file_size <= max_size_bytes:
-            return audio_path, False
-
-        print(f"[AudioCompressor] 音频文件过大 ({file_size / 1024 / 1024:.2f} MB)，超过 {max_size_mb}MB 阈值，正在压缩...")
-        try:
-            from pydub import AudioSegment
-        except ImportError:
-            raise RuntimeError("需要安装 pydub 来压缩过大的音频文件。请运行 `pip install pydub`。")
-        
-        audio = AudioSegment.from_file(audio_path)
-        
-        # 压缩原理说明：
-        # 1. set_channels(1): 转换为单声道，去除立体声的冗余数据。
-        # 2. set_frame_rate(16000): 降低采样率到 16kHz，保留人声频段，丢弃无用的高频细节。
-        audio = audio.set_channels(1).set_frame_rate(16000)
-        
-        fd, temp_compressed_path = tempfile.mkstemp(suffix=".mp3")
-        os.close(fd)
-        
-        # 3. bitrate="32k": 使用 MP3 有损压缩，并限制极低的比特率（32kbps），在保证语音可辨识的前提下极限压缩体积。
-        audio.export(temp_compressed_path, format="mp3", bitrate="32k")
-        print(f"[AudioCompressor] 压缩完成，新文件大小: {os.path.getsize(temp_compressed_path) / 1024 / 1024:.2f} MB")
-        
-        return temp_compressed_path, True
+from core.utils import AudioCompressor
 
 
 class BaseASR(ABC):

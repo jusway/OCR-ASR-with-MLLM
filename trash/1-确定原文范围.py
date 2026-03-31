@@ -52,8 +52,8 @@ class AudioTailTextLocator:
         return location_result
 
 if __name__ == "__main__":
-    audio_path = "摩诃止观-久仁法师/摩诃止观019/摩诃止观019.mp3"
-    text_path = "摩诃止观-久仁法师/摩诃止观019/019原文模糊范围.txt"
+    audio_path = "../摩诃止观-久仁法师/摩诃止观019/摩诃止观019.mp3"
+    text_path = "../摩诃止观-久仁法师/摩诃止观019/019原文模糊范围.txt"
     target_minutes = 600
     model_name = "gemini-3-pro-preview"
 

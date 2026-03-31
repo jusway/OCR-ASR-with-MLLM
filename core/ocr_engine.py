@@ -3,7 +3,7 @@ import requests
 import json
 import base64
 
-from core.pdf_loader import PDFLoader
+from core.utils import PDFLoader
 
 
 class GeminiOCR:
