@@ -250,6 +250,108 @@ class MiMoASR(BaseASR):
                 os.remove(processed_audio_path)
 
 
+class QwenASR(BaseASR):
+    """
+    使用 Qwen 3.5 Omni 模型进行 ASR。
+    """
+
+    def __init__(self, model_name: str = "qwen3.5-omni-plus", temperature: float = 0.1, top_p: float = 0.95):
+        # 请确保在使用前在环境变量中设置了 DASHSCOPE_API_KEY
+        self.api_key = os.environ.get("DASHSCOPE_API_KEY")
+        if not self.api_key:
+            raise ValueError("未检测到 DASHSCOPE_API_KEY 环境变量，请先设置阿里云 API Key。")
+
+        # 使用 openai 客户端指向阿里云百炼兼容接口
+        self.client = OpenAI(
+            api_key=self.api_key,
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+        )
+        self.model_name = model_name
+        self.temperature = temperature
+        self.top_p = top_p
+
+    def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
+        print(f"[Qwen] 正在读取并编码音频文件: {audio_file_path}")
+
+        processed_audio_path, is_temp = AudioCompressor.compress_if_needed(audio_file_path, max_size_mb=50)
+
+        try:
+            # 根据扩展名获取格式，常见的为 mp3 或 wav
+            audio_ext = os.path.splitext(processed_audio_path)[-1].lower().replace(".", "")
+            if audio_ext not in ['mp3', 'wav']:
+                print(f"⚠️ 警告: 未知格式 '{audio_ext}'，使用 'wav' 作为默认兼容格式。")
+                audio_ext = "wav"
+
+            # 读取音频并编码为 Base64
+            with open(processed_audio_path, "rb") as audio_file:
+                audio_base64 = base64.b64encode(audio_file.read()).decode('utf-8')
+
+            # 构建 OpenAI 兼容格式的消息
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "input_audio",
+                            "input_audio": {
+                                "data": audio_base64,
+                                "format": audio_ext
+                            }
+                        }
+                    ]
+                }
+            ]
+
+            print("[Qwen] 正在提交给模型处理...")
+
+            max_retries = 6
+            for attempt in range(max_retries):
+                try:
+                    response_stream = self.client.chat.completions.create(
+                        model=self.model_name,
+                        messages=messages,
+                        temperature=self.temperature,
+                        top_p=self.top_p,
+                        modalities=["text"], # 仅需要文本输出
+                        stream=True,         # 官方文档要求必须为 True
+                        stream_options={"include_usage": True}
+                    )
+
+                    full_text = ""
+                    for chunk in response_stream:
+                        # 流式处理，获取增量文本
+                        if chunk.choices and chunk.choices[0].delta.content:
+                            text_chunk = chunk.choices[0].delta.content
+                            full_text += text_chunk
+
+                    return full_text
+                
+                except openai.RateLimitError as e:
+                    if attempt < max_retries - 1:
+                        wait_time = (2 ** attempt) * 5  # 指数退避: 5s, 10s, 20s, 40s...
+                        print(f"\n[Qwen] 触发并发限制 (429 Too many requests)，等待 {wait_time} 秒后重试 (第 {attempt + 1}/{max_retries} 次)...")
+                        time.sleep(wait_time)
+                    else:
+                        print(f"\n[Qwen] 重试次数已达上限，放弃请求。")
+                        raise e
+                except openai.BadRequestError as e:
+                    error_msg = str(e)
+                    # 捕获内容风控拦截
+                    if '421' in error_msg or 'content_filter' in error_msg or 'Moderation Block' in error_msg:
+                        print(f"\n[Qwen] ⚠️ 警告: 该片段触发了 API 的安全审核策略，已被拦截。将跳过此片段。")
+                        return "\n[⚠️ 此片段内容被 API 安全策略拦截，无法转录]\n"
+                    else:
+                        # 其他的 BadRequestError 正常抛出
+                        raise e
+
+        finally:
+            # 清理可能生成的临时压缩文件
+            if is_temp and os.path.exists(processed_audio_path):
+                os.remove(processed_audio_path)
+
+
 if __name__ == "__main__":
     system_prompt = (
         # 角色
@@ -284,7 +386,11 @@ if __name__ == "__main__":
 
     # 或者使用 MiMo:
     # 请确保在终端执行前：export MIMO_API_KEY="你的key"
-    asr_engine = MiMoASR(model_name="mimo-v2-omni", temperature=0.1, top_p=0.95)
+    # asr_engine = MiMoASR(model_name="mimo-v2-omni", temperature=0.1, top_p=0.95)
+
+    # 或者使用 Qwen:
+    # 请确保在终端执行前：export DASHSCOPE_API_KEY="你的key"
+    asr_engine = QwenASR(model_name="qwen3.5-omni-plus", temperature=0.1, top_p=0.95)
 
     print("--- 任务开始 ---")
     full_transcription = asr_engine.recognize(system_prompt, prompt, audio_path)
