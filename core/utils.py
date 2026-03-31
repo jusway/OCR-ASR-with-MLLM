@@ -10,53 +10,7 @@ from PIL import Image
 import oss2
 
 
-class OSSAudioUploader:
-    """将音频文件上传到阿里云 OSS，返回签名 URL。"""
 
-    def __init__(self, url_expiry_seconds: int = 3600):
-        access_key_id = os.environ.get("OSS_ACCESS_KEY_ID")
-        access_key_secret = os.environ.get("OSS_ACCESS_KEY_SECRET")
-        bucket_name = "asr-data-fofa"
-        endpoint = "https://oss-cn-huhehaote.aliyuncs.com"
-        region = "cn-huhehaote"  # V4 签名需要指定 region
-
-        missing = [k for k, v in {
-            "OSS_ACCESS_KEY_ID": access_key_id,
-            "OSS_ACCESS_KEY_SECRET": access_key_secret,
-        }.items() if not v]
-        if missing:
-            raise ValueError(f"未检测到环境变量: {', '.join(missing)}，请先配置阿里云 OSS 凭证。")
-
-        # 使用 AuthV4 替代默认的 Auth (V1 签名)
-        auth = oss2.AuthV4(access_key_id, access_key_secret)
-        # 初始化 Bucket 时传入 region 参数
-        self.bucket = oss2.Bucket(auth, endpoint, bucket_name, region=region)
-        self.bucket.session.proxies = {}  # 跳过系统代理，直连 OSS
-        self.bucket.session.trust_env = False  # 忽略环境变量中的代理设置 (HTTP_PROXY/HTTPS_PROXY)
-        self.prefix = "ocr-asr-tmp"
-        self.url_expiry_seconds = url_expiry_seconds
-
-    def upload(self, local_path: str) -> tuple[str, str]:
-        """上传本地文件到 OSS，返回 (签名 URL, object_key)。"""
-        ext = os.path.splitext(local_path)[1]
-        object_key = f"{self.prefix}/{uuid.uuid4().hex}{ext}"
-
-        self.bucket.put_object_from_file(object_key, local_path)
-        signed_url = self.bucket.sign_url("GET", object_key, self.url_expiry_seconds)
-        print(f"[OSS] 已上传: {object_key}")
-        return signed_url, object_key
-
-    def delete(self, object_key: str):
-        """根据 object_key 删除 OSS 上的文件。"""
-        self.bucket.delete_object(object_key)
-        print(f"[OSS] 已删除: {object_key}")
-
-    def cleanup_all(self):
-        """删除 prefix 下所有临时文件。"""
-        keys = [obj.key for obj in oss2.ObjectIterator(self.bucket, prefix=f"{self.prefix}/")]
-        if keys:
-            self.bucket.batch_delete_objects(keys)
-            print(f"[OSS] 已清理 {len(keys)} 个临时文件")
 
 
 class AudioCompressor:
@@ -187,6 +141,54 @@ class PDFLoader:
             last_page=page_num
         )
         return images[0]
+
+class OSSAudioUploader:
+    """将音频文件上传到阿里云 OSS，返回签名 URL。"""
+
+    def __init__(self, url_expiry_seconds: int = 3600):
+        access_key_id = os.environ.get("OSS_ACCESS_KEY_ID")
+        access_key_secret = os.environ.get("OSS_ACCESS_KEY_SECRET")
+        bucket_name = "asr-data-fofa"
+        endpoint = "https://oss-cn-huhehaote.aliyuncs.com"
+        region = "cn-huhehaote"  # V4 签名需要指定 region
+
+        missing = [k for k, v in {
+            "OSS_ACCESS_KEY_ID": access_key_id,
+            "OSS_ACCESS_KEY_SECRET": access_key_secret,
+        }.items() if not v]
+        if missing:
+            raise ValueError(f"未检测到环境变量: {', '.join(missing)}，请先配置阿里云 OSS 凭证。")
+
+        # 使用 AuthV4 替代默认的 Auth (V1 签名)
+        auth = oss2.AuthV4(access_key_id, access_key_secret)
+        # 初始化 Bucket 时传入 region 参数
+        self.bucket = oss2.Bucket(auth, endpoint, bucket_name, region=region)
+        self.bucket.session.proxies = {}  # 跳过系统代理，直连 OSS
+        self.bucket.session.trust_env = False  # 忽略环境变量中的代理设置 (HTTP_PROXY/HTTPS_PROXY)
+        self.prefix = "ocr-asr-tmp"
+        self.url_expiry_seconds = url_expiry_seconds
+
+    def upload(self, local_path: str) -> tuple[str, str]:
+        """上传本地文件到 OSS，返回 (签名 URL, object_key)。"""
+        ext = os.path.splitext(local_path)[1]
+        object_key = f"{self.prefix}/{uuid.uuid4().hex}{ext}"
+
+        self.bucket.put_object_from_file(object_key, local_path)
+        signed_url = self.bucket.sign_url("GET", object_key, self.url_expiry_seconds)
+        print(f"[OSS] 已上传: {object_key}")
+        return signed_url, object_key
+
+    def delete(self, object_key: str):
+        """根据 object_key 删除 OSS 上的文件。"""
+        self.bucket.delete_object(object_key)
+        print(f"[OSS] 已删除: {object_key}")
+
+    def cleanup_all(self):
+        """删除 prefix 下所有临时文件。"""
+        keys = [obj.key for obj in oss2.ObjectIterator(self.bucket, prefix=f"{self.prefix}/")]
+        if keys:
+            self.bucket.batch_delete_objects(keys)
+            print(f"[OSS] 已清理 {len(keys)} 个临时文件")
 
 
 if __name__ == "__main__":
