@@ -3,6 +3,7 @@ import time
 import base64
 import tempfile
 import shutil
+import json
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -209,22 +210,18 @@ class MiMoASR(BaseASR):
 class QwenASR(BaseASR):
     """
     使用 Qwen 3.5 Omni 模型进行 ASR。
+    由于阿里云百炼的 OpenAI 兼容接口暂不支持 audio_url，这里改用原生多模态 API。
     """
 
     def __init__(self, model_name: str = "qwen3.5-omni-plus", temperature: float = 0.1, top_p: float = 0.95):
-        # 请确保在使用前在环境变量中设置了 DASHSCOPE_API_KEY
         self.api_key = os.environ.get("DASHSCOPE_API_KEY")
         if not self.api_key:
             raise ValueError("未检测到 DASHSCOPE_API_KEY 环境变量，请先设置阿里云 API Key。")
 
-        # 使用 openai 客户端指向阿里云百炼兼容接口
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
-        )
         self.model_name = model_name
         self.temperature = temperature
         self.top_p = top_p
+        self.api_url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 
     def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
         print(f"[Qwen] 正在处理音频文件: {audio_file_path}")
@@ -236,63 +233,87 @@ class QwenASR(BaseASR):
             uploader = OSSAudioUploader()
             signed_url, _ = uploader.upload(processed_audio_path)
 
-            # 构建 OpenAI 兼容格式的消息，使用 audio_url
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
+            # 构建阿里云百炼原生多模态 API 的请求体
+            payload = {
+                "model": self.model_name,
+                "input": {
+                    "messages": [
                         {
-                            "type": "audio_url",
-                            "audio_url": {
-                                "url": signed_url
-                            }
+                            "role": "system",
+                            "content": [{"text": system_prompt}]
+                        },
+                        {
+                            "role": "user",
+                            "content": [
+                                {"audio": signed_url},
+                                {"text": prompt}
+                            ]
                         }
                     ]
+                },
+                "parameters": {
+                    "temperature": self.temperature,
+                    "top_p": self.top_p,
+                    "incremental_output": True  # 开启增量流式输出
                 }
-            ]
+            }
+
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "X-DashScope-SSE": "enable"  # 开启 SSE 流式响应
+            }
 
             print("[Qwen] 正在提交给模型处理...")
 
             max_retries = 6
             for attempt in range(max_retries):
                 try:
-                    response_stream = self.client.chat.completions.create(
-                        model=self.model_name,
-                        messages=messages,
-                        temperature=self.temperature,
-                        top_p=self.top_p,
-                        modalities=["text"], # 仅需要文本输出
-                        stream=True,         # 官方文档要求必须为 True
-                        stream_options={"include_usage": True}
-                    )
-
                     full_text = ""
-                    for chunk in response_stream:
-                        # 流式处理，获取增量文本
-                        if chunk.choices and chunk.choices[0].delta.content:
-                            text_chunk = chunk.choices[0].delta.content
-                            full_text += text_chunk
+                    with httpx.Client(timeout=None) as client:
+                        with client.stream("POST", self.api_url, headers=headers, json=payload) as response:
+                            if response.status_code != 200:
+                                error_text = response.read().decode('utf-8')
+                                if "Throttling" in error_text or "TooManyRequests" in error_text:
+                                    raise Exception(f"RateLimit: {error_text}")
+                                elif "DataInspectionFailed" in error_text:
+                                    print(f"\n[Qwen] ⚠️ 警告: 该片段触发了 API 的安全审核策略，已被拦截。将跳过此片段。")
+                                    return "\n[⚠️ 此片段内容被 API 安全策略拦截，无法转录]\n"
+                                else:
+                                    raise RuntimeError(f"DashScope API Error ({response.status_code}): {error_text}")
 
+                            for line in response.iter_lines():
+                                if line.startswith("data:"):
+                                    data_str = line[5:].strip()
+                                    if not data_str:
+                                        continue
+                                    try:
+                                        data = json.loads(data_str)
+                                        choices = data.get("output", {}).get("choices", [])
+                                        if choices:
+                                            content = choices[0].get("message", {}).get("content", [])
+                                            if isinstance(content, list):
+                                                for item in content:
+                                                    if "text" in item:
+                                                        full_text += item["text"]
+                                            elif isinstance(content, str):
+                                                full_text += content
+                                    except json.JSONDecodeError:
+                                        pass
                     return full_text
                 
-                except openai.RateLimitError as e:
-                    if attempt < max_retries - 1:
-                        wait_time = (2 ** attempt) * 5  # 指数退避: 5s, 10s, 20s, 40s...
-                        print(f"\n[Qwen] 触发并发限制 (429 Too many requests)，等待 {wait_time} 秒后重试 (第 {attempt + 1}/{max_retries} 次)...")
-                        time.sleep(wait_time)
-                    else:
-                        print(f"\n[Qwen] 重试次数已达上限，放弃请求。")
-                        raise e
-                except openai.BadRequestError as e:
+                except Exception as e:
                     error_msg = str(e)
-                    # 捕获内容风控拦截
-                    if '421' in error_msg or 'content_filter' in error_msg or 'Moderation Block' in error_msg:
-                        print(f"\n[Qwen] ⚠️ 警告: 该片段触发了 API 的安全审核策略，已被拦截。将跳过此片段。")
-                        return "\n[⚠️ 此片段内容被 API 安全策略拦截，无法转录]\n"
+                    if "RateLimit" in error_msg or isinstance(e, httpx.RequestError):
+                        if attempt < max_retries - 1:
+                            wait_time = (2 ** attempt) * 5
+                            print(f"\n[Qwen] 触发并发限制或网络异常，等待 {wait_time} 秒后重试 (第 {attempt + 1}/{max_retries} 次)...")
+                            time.sleep(wait_time)
+                        else:
+                            print(f"\n[Qwen] 重试次数已达上限，放弃请求。")
+                            raise e
                     else:
-                        # 其他的 BadRequestError 正常抛出
+                        # 其他不可恢复的错误直接抛出
                         raise e
 
         finally:
