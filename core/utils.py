@@ -169,13 +169,18 @@ class OSSAudioUploader:
         self.url_expiry_seconds = url_expiry_seconds
 
     def upload(self, local_path: str) -> tuple[str, str]:
-        """上传本地文件到 OSS，返回 (签名 URL, object_key)。"""
-        ext = os.path.splitext(local_path)[1]
-        object_key = f"{self.prefix}/{uuid.uuid4().hex}{ext}"
+        """上传本地文件到 OSS，如果同名文件已存在则直接复用，返回 (签名 URL, object_key)。"""
+        filename = os.path.basename(local_path)
+        object_key = f"{self.prefix}/{filename}"
 
-        self.bucket.put_object_from_file(object_key, local_path)
+        # 检查文件是否已经存在于 OSS 中
+        if self.bucket.object_exists(object_key):
+            print(f"[OSS] 文件已存在，直接复用: {object_key}")
+        else:
+            self.bucket.put_object_from_file(object_key, local_path)
+            print(f"[OSS] 已上传: {object_key}")
+
         signed_url = self.bucket.sign_url("GET", object_key, self.url_expiry_seconds)
-        print(f"[OSS] 已上传: {object_key}")
         return signed_url, object_key
 
     def delete(self, object_key: str):
@@ -195,12 +200,9 @@ if __name__ == "__main__":
     audio_path = r"D:\DATA\Project\OCR-ASR-with-MLLM\摩诃止观-久仁法师\摩诃止观001\摩诃止观001.mp3"
 
     uploader = OSSAudioUploader()
-    object_key = None
     try:
         signed_url, object_key = uploader.upload(audio_path)
         print(f"签名 URL: {signed_url}")
         print(f"Object Key: {object_key}")
-    finally:
-        if object_key:
-            uploader.delete(object_key)
-            print("测试完成，临时文件已清理")
+    except Exception as e:
+        print(f"发生错误: {e}")
