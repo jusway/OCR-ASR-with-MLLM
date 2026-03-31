@@ -18,6 +18,7 @@ class OSSAudioUploader:
         access_key_secret = os.environ.get("OSS_ACCESS_KEY_SECRET")
         bucket_name = "asr-data-fofa"
         endpoint = "https://oss-cn-huhehaote.aliyuncs.com"
+        region = "cn-huhehaote"  # V4 签名需要指定 region
 
         missing = [k for k, v in {
             "OSS_ACCESS_KEY_ID": access_key_id,
@@ -26,8 +27,10 @@ class OSSAudioUploader:
         if missing:
             raise ValueError(f"未检测到环境变量: {', '.join(missing)}，请先配置阿里云 OSS 凭证。")
 
-        auth = oss2.Auth(access_key_id, access_key_secret)
-        self.bucket = oss2.Bucket(auth, endpoint, bucket_name)
+        # 使用 AuthV4 替代默认的 Auth (V1 签名)
+        auth = oss2.AuthV4(access_key_id, access_key_secret)
+        # 初始化 Bucket 时传入 region 参数
+        self.bucket = oss2.Bucket(auth, endpoint, bucket_name, region=region)
         self.bucket.session.proxies = {}  # 跳过系统代理，直连 OSS
         self.bucket.session.trust_env = False  # 忽略环境变量中的代理设置 (HTTP_PROXY/HTTPS_PROXY)
         self.prefix = "ocr-asr-tmp"
