@@ -15,7 +15,7 @@ import openai
 from openai import OpenAI
 import httpx
 
-from core.utils import AudioCompressor
+from core.utils import AudioCompressor, OSSAudioUploader
 
 
 class BaseASR(ABC):
@@ -132,22 +132,16 @@ class MiMoASR(BaseASR):
         self.top_p = top_p
 
     def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
-        print(f"[MiMo] 正在读取并编码音频文件: {audio_file_path}")
+        print(f"[MiMo] 正在处理音频文件: {audio_file_path}")
 
         processed_audio_path, is_temp = AudioCompressor.compress_if_needed(audio_file_path, max_size_mb=50)
 
         try:
-            # 根据扩展名获取格式，常见的为 mp3 或 wav
-            audio_ext = os.path.splitext(processed_audio_path)[-1].lower().replace(".", "")
-            if audio_ext not in ['mp3', 'wav']:
-                print(f"⚠️ 警告: 未知格式 '{audio_ext}'，使用 'wav' 作为默认兼容格式。")
-                audio_ext = "wav"
+            # 使用 OSS 上传获取 URL
+            uploader = OSSAudioUploader()
+            signed_url, _ = uploader.upload(processed_audio_path)
 
-            # 读取音频并编码为 Base64
-            with open(processed_audio_path, "rb") as audio_file:
-                audio_base64 = base64.b64encode(audio_file.read()).decode('utf-8')
-
-            # 构建 OpenAI 兼容格式的消息
+            # 构建 OpenAI 兼容格式的消息，使用 audio_url
             messages = [
                 {"role": "system", "content": system_prompt},
                 {
@@ -155,10 +149,9 @@ class MiMoASR(BaseASR):
                     "content": [
                         {"type": "text", "text": prompt},
                         {
-                            "type": "input_audio",
-                            "input_audio": {
-                                "data": audio_base64,
-                                "format": audio_ext
+                            "type": "audio_url",
+                            "audio_url": {
+                                "url": signed_url
                             }
                         }
                     ]
@@ -234,22 +227,16 @@ class QwenASR(BaseASR):
         self.top_p = top_p
 
     def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
-        print(f"[Qwen] 正在读取并编码音频文件: {audio_file_path}")
+        print(f"[Qwen] 正在处理音频文件: {audio_file_path}")
 
         processed_audio_path, is_temp = AudioCompressor.compress_if_needed(audio_file_path, max_size_mb=50)
 
         try:
-            # 根据扩展名获取格式，常见的为 mp3 或 wav
-            audio_ext = os.path.splitext(processed_audio_path)[-1].lower().replace(".", "")
-            if audio_ext not in ['mp3', 'wav']:
-                print(f"⚠️ 警告: 未知格式 '{audio_ext}'，使用 'wav' 作为默认兼容格式。")
-                audio_ext = "wav"
+            # 使用 OSS 上传获取 URL
+            uploader = OSSAudioUploader()
+            signed_url, _ = uploader.upload(processed_audio_path)
 
-            # 读取音频并编码为 Base64
-            with open(processed_audio_path, "rb") as audio_file:
-                audio_base64 = base64.b64encode(audio_file.read()).decode('utf-8')
-
-            # 构建 OpenAI 兼容格式的消息
+            # 构建 OpenAI 兼容格式的消息，使用 audio_url
             messages = [
                 {"role": "system", "content": system_prompt},
                 {
@@ -257,10 +244,9 @@ class QwenASR(BaseASR):
                     "content": [
                         {"type": "text", "text": prompt},
                         {
-                            "type": "input_audio",
-                            "input_audio": {
-                                "data": audio_base64,
-                                "format": audio_ext
+                            "type": "audio_url",
+                            "audio_url": {
+                                "url": signed_url
                             }
                         }
                     ]
