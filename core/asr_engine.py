@@ -339,6 +339,7 @@ if __name__ == "__main__":
 
     # 或者使用 Qwen:
     # 请确保在终端执行前：export DASHSCOPE_API_KEY="你的key"
+    print("正在初始化 QwenASR 引擎...")
     asr_engine = QwenASR(model_name="qwen3.5-omni-plus", temperature=0.1, top_p=0.95)
 
     print("--- 任务开始 ---")
