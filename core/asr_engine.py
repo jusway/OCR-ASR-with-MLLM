@@ -314,8 +314,8 @@ if __name__ == "__main__":
         "原典引用的时候使用繁体字。"
     )
 
-    prompt_path = r"../摩诃止观-久仁法师/摩诃止观012/012原文模糊范围.txt"  # 记载原文内容
-    audio_path = "../摩诃止观-久仁法师/摩诃止观012/chunk_001.mp3"
+    prompt_path = r"../摩诃止观-久仁法师/摩诃止观001/001原文模糊范围.txt"  # 记载原文内容
+    audio_path = "../摩诃止观-久仁法师/摩诃止观001/摩诃止观001.mp3"
 
     try:
         with open(prompt_path, "r", encoding="utf-8") as f:
