@@ -29,6 +29,7 @@ class OSSAudioUploader:
         auth = oss2.Auth(access_key_id, access_key_secret)
         self.bucket = oss2.Bucket(auth, endpoint, bucket_name)
         self.bucket.session.proxies = {}  # 跳过系统代理，直连 OSS
+        self.bucket.session.trust_env = False  # 忽略环境变量中的代理设置 (HTTP_PROXY/HTTPS_PROXY)
         self.prefix = "ocr-asr-tmp"
         self.url_expiry_seconds = url_expiry_seconds
 
@@ -189,10 +190,12 @@ if __name__ == "__main__":
     audio_path = r"D:\DATA\Project\OCR-ASR-with-MLLM\摩诃止观-久仁法师\摩诃止观001\摩诃止观001.mp3"
 
     uploader = OSSAudioUploader()
+    object_key = None
     try:
         signed_url, object_key = uploader.upload(audio_path)
         print(f"签名 URL: {signed_url}")
         print(f"Object Key: {object_key}")
     finally:
-        uploader.delete(object_key)
-        print("测试完成，临时文件已清理")
+        if object_key:
+            uploader.delete(object_key)
+            print("测试完成，临时文件已清理")
