@@ -261,7 +261,8 @@ class QwenASR(BaseASR):
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
-                "X-DashScope-SSE": "enable"  # 开启 SSE 流式响应
+                "X-DashScope-SSE": "enable",  # 开启 SSE 流式响应
+                "X-DashScope-OssResourceResolve": "enable"  # 允许解析 OSS 等临时链接
             }
 
             print("[Qwen] 正在提交给模型处理...")
@@ -280,6 +281,8 @@ class QwenASR(BaseASR):
                                     print(f"\n[Qwen] ⚠️ 警告: 该片段触发了 API 的安全审核策略，已被拦截。将跳过此片段。")
                                     return "\n[⚠️ 此片段内容被 API 安全策略拦截，无法转录]\n"
                                 else:
+                                    if response.status_code == 403:
+                                        print("\n[Qwen] ⚠️ 403 AccessDenied: 请确保您已在阿里云百炼控制台开通并申请了该模型的使用权限，或者检查 OSS 链接是否可访问。")
                                     raise RuntimeError(f"DashScope API Error ({response.status_code}): {error_text}")
 
                             for line in response.iter_lines():
