@@ -1,41 +1,22 @@
 import os
+import concurrent.futures
 from pathlib import Path
 from pydub import AudioSegment
 
-from core.asr_engine import MiMoASR
-from core.text_to_text_engine import MiMoText
-
-
-def clean_repeated_text(text: str) -> str:
-    """
-    简单的后处理：移除连续重复的相同行（常见于ASR在静音处的幻觉）。
-    如果某一行与上一行完全相同，则跳过不输出。
-    """
-    lines = text.split('\n')
-    if not lines:
-        return text
-    
-    cleaned = []
-    for line in lines:
-        stripped_line = line.strip()
-        if not stripped_line:
-            cleaned.append(line)
-            continue
-            
-        if cleaned and stripped_line == cleaned[-1].strip():
-            continue
-            
-        cleaned.append(line)
-        
-    return '\n'.join(cleaned)
+from core.asr_engine import GeminiASR
+from core.text_to_text_engine import GeminiText
+from core.utils import AudioChunker
 
 
 class AudioProcessingPipeline:
-    """端到端音频处理流水线：整段转录 -> 书面化"""
+    """旧版端到端音频处理流水线：切片 -> 并发转录 -> 拼接 -> 书面化"""
 
-    def __init__(self, asr_engine, text_engine):
+    def __init__(self, asr_engine, text_engine, chunk_minutes=20, overlap_minutes=10, max_workers=8):
         self.asr_engine = asr_engine
         self.text_engine = text_engine
+        self.chunk_minutes = chunk_minutes
+        self.overlap_minutes = overlap_minutes
+        self.max_workers = max_workers
 
     def _get_audio_duration(self, audio_path):
         audio = AudioSegment.from_mp3(audio_path)
@@ -44,7 +25,7 @@ class AudioProcessingPipeline:
         minutes, seconds = divmod(remainder, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-    def run(self, audio_path, fuzzy_text_path, asr_sys_prompt, text_sys_prompt):
+    def run(self, audio_path, prompt_path, asr_sys_prompt, text_sys_prompt):
         audio_path_obj = Path(audio_path)
         base_name = audio_path_obj.stem
         parent_dir = audio_path_obj.parent
@@ -52,43 +33,58 @@ class AudioProcessingPipeline:
         transcript_filename = parent_dir / f"{base_name}_逐字稿.md"
         final_output_filename = parent_dir / f"{base_name}_书面稿.md"
 
-        # 读取模糊范围的原文
-        with open(fuzzy_text_path, "r", encoding="utf-8") as f:
+        # 读取原文
+        with open(prompt_path, "r", encoding="utf-8") as f:
             reference_text = f.read()
 
         # ==========================================
-        # 步骤 1: 整段音频直接转录
+        # 步骤 1: 音频切片
         # ==========================================
-        print("\n[1/2] 开始进行整段音频转录...")
+        print("\n[1/3] 正在进行音频切片...")
+        chunker = AudioChunker(chunk_minutes=self.chunk_minutes, overlap_seconds=self.overlap_minutes * 60)
+        chunks_dir = str(parent_dir / "temp_chunks")
+        chunk_files = chunker.process(audio_path, output_dir=chunks_dir)
+        print(f"音频已切分为 {len(chunk_files)} 个片段。")
+
+        # ==========================================
+        # 步骤 2: 并发转录
+        # ==========================================
+        print("\n[2/3] 开始并发转录音频切片...")
         asr_prompt = f"【原典参考】\n{reference_text}\n"
         
-        raw_transcript = self.asr_engine.recognize(asr_sys_prompt, asr_prompt, audio_path)
+        transcripts = [""] * len(chunk_files)
         
-        # 过滤可能出现的复读机幻觉
-        transcript_text = clean_repeated_text(raw_transcript)
+        def process_chunk(index, chunk_file):
+            print(f"  -> 正在处理切片 {index + 1}/{len(chunk_files)}: {os.path.basename(chunk_file)}")
+            text = self.asr_engine.recognize(asr_sys_prompt, asr_prompt, chunk_file)
+            return index, text
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = [executor.submit(process_chunk, i, f) for i, f in enumerate(chunk_files)]
+            for future in concurrent.futures.as_completed(futures):
+                idx, text = future.result()
+                transcripts[idx] = text
+
+        transcript_text = "\n".join(transcripts)
 
         with open(transcript_filename, "w", encoding="utf-8") as f:
             f.write(transcript_text)
-        print(f"逐字稿已保存至: {transcript_filename}")
+        print(f"逐字稿已拼接并保存至: {transcript_filename}")
 
         # ==========================================
-        # 步骤 2: 整理为书面稿
+        # 步骤 3: 整理为书面稿
         # ==========================================
-        print(f"\n[2/2] 正在使用 {self.text_engine.model_name} 将逐字稿整理为书面稿，请耐心等待...")
+        print(f"\n[3/3] 正在将逐字稿整理为书面稿，请耐心等待...")
         user_prompt = f"【原典参考】\n{reference_text}\n\n【总逐字稿】\n{transcript_text}\n"
 
         written_text = self.text_engine.generate(text_sys_prompt, user_prompt)
 
         # ==========================================
-        # 步骤 3: 人工补充元数据并生成最终文档
+        # 步骤 4: 补充元数据
         # ==========================================
         print("\n===========================================")
         print("✅ API 文本处理全部完成！")
-        print(f"💡 提示：您可以现在去本地文件夹查看刚生成的中间文件：")
-        print(f"  - {transcript_filename.name}")
-        print("参考上述文件内容后，请补充以下信息以生成最终文档：")
-        print("===========================================\n")
-
+        
         year = input("请输入音频的创建时间（年份）: ")
         author = input("请输入音频的作者: ")
         metadata_original_text = input("请输入音频的原文: ")
@@ -115,14 +111,14 @@ class AudioProcessingPipeline:
 if __name__ == "__main__":
     # ---------------- 基础配置 ----------------
     audio_path = "摩诃止观-久仁法师/摩诃止观001/摩诃止观001.mp3"
-    fuzzy_text_path = "摩诃止观-久仁法师/摩诃止观001/001原文模糊范围.txt"
+    prompt_path = "摩诃止观-久仁法师/摩诃止观001/001原文模糊范围.txt"
 
     # ---------------- 初始化引擎 ----------------
-    print("正在初始化 MiMoASR 引擎...")
-    asr_engine = MiMoASR(model_name="mimo-v2-omni", temperature=0.1, top_p=0.95)
+    print("正在初始化 GeminiASR 引擎...")
+    asr_engine = GeminiASR(model_name="gemini-3.1-pro-preview", temperature=0.1, top_p=0.95)
     
-    print("正在初始化 MiMoText 引擎...")
-    text_engine = MiMoText(model_name="mimo-v2-pro", temperature=0.3)
+    print("正在初始化 GeminiText 引擎...")
+    text_engine = GeminiText(model_name="gemini-3.1-pro-preview", temperature=0.3)
 
     # ---------------- 系统提示词 ----------------
     asr_system_prompt = (
@@ -132,21 +128,16 @@ if __name__ == "__main__":
         "严格按照用户提供的【原典参考】校对专有名词。"
         "引用原典的时候使用『』符号。"
         "只输出转录内容，不说多余的话。"
-        "【重要警告】：如果遇到音频尾部长时间静音、无意义的背景音或听不清的地方，请直接停止转录，**绝对不要**自行脑补、幻觉或反复输出相同的句子。请务必只转录实际听到的清晰语音！"
     )
 
     text_system_prompt = (
-        # 角色
         "您是一位资深的佛学逐字录音稿整理的比丘师父。"
-        # 任务
         "您的任务是将得到的讲法长音频逐字稿整理成书面文稿。"
-        # 要求注意
         "风格要大白话、详细，但尽量使再笨的人也能看懂。"
         "讲法者提到的原典文，务必参照【原典参考】进行校对。"
         "引用原典时候使用『』符号框住。"
         "禁止使用md格式。"
         "根据大意自然分段即可。"
-        # 信息规范
         "逐字稿可能会听写有误，遇到可能是谬误的字词，酌情改正。"
         "不丢失任何总逐字稿的信息，也不能自行添加没说的信息。"
         "只输出文稿内容，不说多余的话。"
@@ -155,12 +146,15 @@ if __name__ == "__main__":
     # ---------------- 运行流水线 ----------------
     pipeline = AudioProcessingPipeline(
         asr_engine=asr_engine,
-        text_engine=text_engine
+        text_engine=text_engine,
+        chunk_minutes=20,
+        overlap_minutes=10,
+        max_workers=8
     )
 
     pipeline.run(
         audio_path=audio_path,
-        fuzzy_text_path=fuzzy_text_path,
+        prompt_path=prompt_path,
         asr_sys_prompt=asr_system_prompt,
         text_sys_prompt=text_system_prompt
     )
