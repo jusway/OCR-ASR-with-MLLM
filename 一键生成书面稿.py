@@ -180,13 +180,13 @@ if __name__ == "__main__":
     print("正在初始化 MiMoASR 引擎...")
     asr_engine = MiMoASR(model_name="mimo-v2-omni", temperature=0.1, top_p=0.95)
     
-    engine_choice = input("请选择文本处理引擎 (1: MiMo, 2: Gemini) [默认 1]: ").strip()
+    engine_choice = input("请选择文本处理引擎 (1: Gemini, 2: MiMo) [默认 1]: ").strip()
     if engine_choice == "2":
-        print("正在初始化 GeminiText 引擎...")
-        text_engine = GeminiText(model_name="gemini-3.1-pro-preview", temperature=0.3)
-    else:
         print("正在初始化 MiMoText 引擎...")
         text_engine = MiMoText(model_name="mimo-v2-pro", temperature=0.3)
+    else:
+        print("正在初始化 GeminiText 引擎...")
+        text_engine = GeminiText(model_name="gemini-3.1-pro-preview", temperature=0.3)
 
     # ---------------- 系统提示词 ----------------
     asr_system_prompt = (
