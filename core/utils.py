@@ -163,9 +163,10 @@ class OSSAudioUploader:
         self.prefix = "ocr-asr-tmp"
         self.url_expiry_seconds = url_expiry_seconds
 
-    def upload(self, local_path: str) -> tuple[str, str]:
+    def upload(self, local_path: str, filename: str = None) -> tuple[str, str]:
         """上传本地文件到 OSS，如果同名文件已存在则直接复用，返回 (签名 URL, object_key)。"""
-        filename = os.path.basename(local_path)
+        if filename is None:
+            filename = os.path.basename(local_path)
         object_key = f"{self.prefix}/{filename}"
 
         # 检查文件是否已经存在于 OSS 中
