@@ -4,6 +4,7 @@ import base64
 import tempfile
 import shutil
 import json
+import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -151,20 +152,16 @@ class MiMoASR(BaseASR):
         uploader = OSSAudioUploader()
         original_filename = os.path.basename(audio_file_path)
         base_name, _ = os.path.splitext(original_filename)
-        target_filename = f"{base_name}.mp3"
-        object_key = f"{uploader.prefix}/{target_filename}"
+        # 添加 UUID 确保每次上传的文件名唯一，避免复用损坏的旧文件
+        target_filename = f"{base_name}_{uuid.uuid4().hex[:8]}.mp3"
 
         is_temp = False
         processed_audio_path = None
 
         try:
-            # 检查 OSS 是否已存在同名文件，存在则跳过压缩直接复用
-            if uploader.bucket.object_exists(object_key):
-                print(f"[OSS] 云端已存在同名音频，跳过压缩，直接复用: {object_key}")
-                signed_url = uploader.bucket.sign_url("GET", object_key, uploader.url_expiry_seconds)
-            else:
-                processed_audio_path, is_temp = self._compress_audio(audio_file_path)
-                signed_url, _ = uploader.upload(processed_audio_path, filename=target_filename)
+            # 强制进行压缩并上传新文件
+            processed_audio_path, is_temp = self._compress_audio(audio_file_path)
+            signed_url, object_key = uploader.upload(processed_audio_path, filename=target_filename)
 
             # 构建 OpenAI 兼容格式的消息，使用 audio_url
             messages = [
@@ -265,20 +262,16 @@ class QwenASR(BaseASR):
         uploader = OSSAudioUploader()
         original_filename = os.path.basename(audio_file_path)
         base_name, _ = os.path.splitext(original_filename)
-        target_filename = f"{base_name}.mp3"
-        object_key = f"{uploader.prefix}/{target_filename}"
+        # 添加 UUID 确保每次上传的文件名唯一
+        target_filename = f"{base_name}_{uuid.uuid4().hex[:8]}.mp3"
 
         is_temp = False
         processed_audio_path = None
 
         try:
-            # 检查 OSS 是否已存在同名文件，存在则跳过压缩直接复用
-            if uploader.bucket.object_exists(object_key):
-                print(f"[OSS] 云端已存在同名音频，跳过压缩，直接复用: {object_key}")
-                signed_url = uploader.bucket.sign_url("GET", object_key, uploader.url_expiry_seconds)
-            else:
-                processed_audio_path, is_temp = self._compress_audio(audio_file_path)
-                signed_url, _ = uploader.upload(processed_audio_path, filename=target_filename)
+            # 强制进行压缩并上传新文件
+            processed_audio_path, is_temp = self._compress_audio(audio_file_path)
+            signed_url, object_key = uploader.upload(processed_audio_path, filename=target_filename)
 
             # 构建阿里云百炼原生多模态 API 的请求体
             payload = {
