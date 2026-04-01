@@ -14,21 +14,16 @@ import oss2
 
 
 class AudioCompressor:
-    """音频压缩工具类，用于处理过大的音频文件。"""
+    """音频压缩工具类，将音频统一压缩为 16kHz 单声道 mp3。"""
 
     @staticmethod
-    def compress_if_needed(audio_path: str, max_size_mb: int = 50) -> tuple[str, bool]:
+    def compress(audio_path: str) -> tuple[str, bool]:
         """
-        检查音频文件大小，如果超过指定阈值则进行压缩。
+        将音频压缩为 16kHz 单声道 32k bitrate 的 mp3 格式。
         返回: (处理后的音频路径, 是否生成了临时文件)
         """
         file_size = os.path.getsize(audio_path)
-        max_size_bytes = max_size_mb * 1024 * 1024
-
-        if file_size <= max_size_bytes:
-            return audio_path, False
-
-        print(f"[AudioCompressor] 音频文件过大 ({file_size / 1024 / 1024:.2f} MB)，超过 {max_size_mb}MB 阈值，正在压缩...")
+        print(f"[AudioCompressor] 正在压缩音频 (原大小: {file_size / 1024 / 1024:.2f} MB)...")
         from pydub import AudioSegment
 
         audio = AudioSegment.from_file(audio_path)

@@ -135,7 +135,7 @@ class MiMoASR(BaseASR):
     def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
         print(f"[MiMo] 正在处理音频文件: {audio_file_path}")
 
-        processed_audio_path, is_temp = AudioCompressor.compress_if_needed(audio_file_path, max_size_mb=50)
+        processed_audio_path, is_temp = AudioCompressor.compress(audio_file_path)
 
         try:
             # 使用 OSS 上传获取 URL
@@ -226,7 +226,7 @@ class QwenASR(BaseASR):
     def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
         print(f"[Qwen] 正在处理音频文件: {audio_file_path}")
 
-        processed_audio_path, is_temp = AudioCompressor.compress_if_needed(audio_file_path, max_size_mb=50)
+        processed_audio_path, is_temp = AudioCompressor.compress(audio_file_path)
 
         try:
             # 使用 OSS 上传获取 URL
