@@ -10,7 +10,16 @@ from PIL import Image
 import oss2
 
 
-
+class Color:
+    """控制台输出颜色代码"""
+    RESET = '\033[0m'
+    RED = '\033[91m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    MAGENTA = '\033[95m'
+    CYAN = '\033[96m'
+    WHITE = '\033[97m'
 
 
 class AudioCompressor:
@@ -23,7 +32,7 @@ class AudioCompressor:
         返回: (处理后的音频路径, 是否生成了临时文件)
         """
         file_size = os.path.getsize(audio_path)
-        print(f"[AudioCompressor] 正在压缩音频 (原大小: {file_size / 1024 / 1024:.2f} MB)...")
+        print(f"{Color.CYAN}[AudioCompressor] 正在压缩音频 (原大小: {file_size / 1024 / 1024:.2f} MB)...{Color.RESET}")
         from pydub import AudioSegment
 
         audio = AudioSegment.from_file(audio_path)
@@ -33,7 +42,7 @@ class AudioCompressor:
         os.close(fd)
 
         audio.export(temp_compressed_path, format="mp3", bitrate="32k")
-        print(f"[AudioCompressor] 压缩完成，新文件大小: {os.path.getsize(temp_compressed_path) / 1024 / 1024:.2f} MB")
+        print(f"{Color.CYAN}[AudioCompressor] 压缩完成，新文件大小: {os.path.getsize(temp_compressed_path) / 1024 / 1024:.2f} MB{Color.RESET}")
 
         return temp_compressed_path, True
 
@@ -171,10 +180,10 @@ class OSSAudioUploader:
 
         # 检查文件是否已经存在于 OSS 中
         if self.bucket.object_exists(object_key):
-            print(f"[OSS] 文件已存在，直接复用: {object_key}")
+            print(f"{Color.BLUE}[OSS] 文件已存在，直接复用: {object_key}{Color.RESET}")
         else:
             self.bucket.put_object_from_file(object_key, local_path)
-            print(f"[OSS] 已上传: {object_key}")
+            print(f"{Color.BLUE}[OSS] 已上传: {object_key}{Color.RESET}")
 
         signed_url = self.bucket.sign_url("GET", object_key, self.url_expiry_seconds)
         return signed_url, object_key
@@ -182,14 +191,14 @@ class OSSAudioUploader:
     def delete(self, object_key: str):
         """根据 object_key 删除 OSS 上的文件。"""
         self.bucket.delete_object(object_key)
-        print(f"[OSS] 已删除: {object_key}")
+        print(f"{Color.BLUE}[OSS] 已删除: {object_key}{Color.RESET}")
 
     def cleanup_all(self):
         """删除 prefix 下所有临时文件。"""
         keys = [obj.key for obj in oss2.ObjectIterator(self.bucket, prefix=f"{self.prefix}/")]
         if keys:
             self.bucket.batch_delete_objects(keys)
-            print(f"[OSS] 已清理 {len(keys)} 个临时文件")
+            print(f"{Color.BLUE}[OSS] 已清理 {len(keys)} 个临时文件{Color.RESET}")
 
 
 if __name__ == "__main__":
