@@ -108,13 +108,13 @@ class AudioProcessingPipeline:
         print("参考上述文件内容后，请补充以下信息以生成最终文档：")
         print("===========================================\n")
 
-        year = input("请输入音频的创建时间（年份）: ")
-        author = input("请输入音频的作者: ")
+        year = input("请输入音频的创建时间（年份） [直接回车跳过]: ").strip()
+        author = input("请输入音频的作者 [直接回车跳过]: ").strip()
         
         # 默认可以直接使用提取出的精准原文，如果用户想手动修改也可以输入
         print(f"\n提取到的精准原文如下：\n{exact_reference_text}\n")
-        metadata_original_text = input("请输入音频的原文 (直接回车则默认使用上述提取的精准原文): ")
-        if not metadata_original_text.strip():
+        metadata_original_text = input("请输入音频的原文 [直接回车默认使用上述提取的精准原文]: ").strip()
+        if not metadata_original_text:
             metadata_original_text = exact_reference_text.strip()
 
         duration = self._get_audio_duration(audio_path)
