@@ -16,7 +16,7 @@ import openai
 from openai import OpenAI
 import httpx
 
-from core.utils import AudioCompressor, OSSAudioUploader, AudioChunker
+from core.utils import AudioCompressor, OSSAudioUploader
 
 
 class BaseASR(ABC):
@@ -148,12 +148,23 @@ class MiMoASR(BaseASR):
     def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
         print(f"[MiMo] 正在处理音频文件: {audio_file_path}")
 
-        processed_audio_path, is_temp = self._compress_audio(audio_file_path)
+        uploader = OSSAudioUploader()
+        original_filename = os.path.basename(audio_file_path)
+        base_name, _ = os.path.splitext(original_filename)
+        target_filename = f"{base_name}.mp3"
+        object_key = f"{uploader.prefix}/{target_filename}"
+
+        is_temp = False
+        processed_audio_path = None
 
         try:
-            # 使用 OSS 上传获取 URL
-            uploader = OSSAudioUploader()
-            signed_url, _ = uploader.upload(processed_audio_path)
+            # 检查 OSS 是否已存在同名文件，存在则跳过压缩直接复用
+            if uploader.bucket.object_exists(object_key):
+                print(f"[OSS] 云端已存在同名音频，跳过压缩，直接复用: {object_key}")
+                signed_url = uploader.bucket.sign_url("GET", object_key, uploader.url_expiry_seconds)
+            else:
+                processed_audio_path, is_temp = self._compress_audio(audio_file_path)
+                signed_url, _ = uploader.upload(processed_audio_path, filename=target_filename)
 
             # 构建 OpenAI 兼容格式的消息，使用 audio_url
             messages = [
@@ -228,7 +239,7 @@ class MiMoASR(BaseASR):
 
         finally:
             # 清理可能生成的临时压缩文件
-            if is_temp and os.path.exists(processed_audio_path):
+            if is_temp and processed_audio_path and os.path.exists(processed_audio_path):
                 os.remove(processed_audio_path)
 
 
@@ -251,12 +262,23 @@ class QwenASR(BaseASR):
     def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
         print(f"[Qwen] 正在处理音频文件: {audio_file_path}")
 
-        processed_audio_path, is_temp = self._compress_audio(audio_file_path)
+        uploader = OSSAudioUploader()
+        original_filename = os.path.basename(audio_file_path)
+        base_name, _ = os.path.splitext(original_filename)
+        target_filename = f"{base_name}.mp3"
+        object_key = f"{uploader.prefix}/{target_filename}"
+
+        is_temp = False
+        processed_audio_path = None
 
         try:
-            # 使用 OSS 上传获取 URL
-            uploader = OSSAudioUploader()
-            signed_url, _ = uploader.upload(processed_audio_path)
+            # 检查 OSS 是否已存在同名文件，存在则跳过压缩直接复用
+            if uploader.bucket.object_exists(object_key):
+                print(f"[OSS] 云端已存在同名音频，跳过压缩，直接复用: {object_key}")
+                signed_url = uploader.bucket.sign_url("GET", object_key, uploader.url_expiry_seconds)
+            else:
+                processed_audio_path, is_temp = self._compress_audio(audio_file_path)
+                signed_url, _ = uploader.upload(processed_audio_path, filename=target_filename)
 
             # 构建阿里云百炼原生多模态 API 的请求体
             payload = {
@@ -363,7 +385,7 @@ class QwenASR(BaseASR):
 
         finally:
             # 清理可能生成的临时压缩文件
-            if is_temp and os.path.exists(processed_audio_path):
+            if is_temp and processed_audio_path and os.path.exists(processed_audio_path):
                 os.remove(processed_audio_path)
 
 
