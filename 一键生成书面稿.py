@@ -179,7 +179,7 @@ if __name__ == "__main__":
 
     # ---------------- 初始化引擎 ----------------
     print(f"{Color.CYAN}正在初始化 MiMoASR 引擎...{Color.RESET}")
-    asr_engine = MiMoASR(model_name="mimo-v2-omni", temperature=0.1, top_p=0.95)
+    asr_engine = MiMoASR(model_name="mimo-v2-omni", temperature=0.3, top_p=0.95)
     
     engine_choice = input(f"{Color.YELLOW}请选择文本处理引擎 (1: Gemini, 2: MiMo) [默认 1]: {Color.RESET}").strip()
     if engine_choice == "2":

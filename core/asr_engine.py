@@ -131,7 +131,7 @@ class MiMoASR(BaseASR):
     使用 Xiaomi MiMo (如 mimo-v2-omni) 模型进行 ASR。
     """
 
-    def __init__(self, model_name: str = "mimo-v2-omni", temperature: float = 0.1, top_p: float = 0.95):
+    def __init__(self, model_name: str = "mimo-v2-omni", temperature: float = 0.3, top_p: float = 0.95):
         # 请确保在使用前在环境变量中设置了 MIMO_API_KEY
         self.api_key = os.environ.get("MIMO_API_KEY")
         if not self.api_key:
