@@ -174,12 +174,12 @@ class AudioProcessingPipeline:
 
 if __name__ == "__main__":
     # ---------------- 基础配置 ----------------
-    audio_path = "摩诃止观-久仁法师/摩诃止观003/摩诃止观003.mp3"
-    fuzzy_text_path = "摩诃止观-久仁法师/摩诃止观003/003原文模糊范围.txt"
+    audio_path = "摩诃止观-久仁法师/摩诃止观004/摩诃止观004.mp3"
+    fuzzy_text_path = "摩诃止观-久仁法师/摩诃止观004/004原文模糊范围.txt"
 
     # ---------------- 初始化引擎 ----------------
     print(f"{Color.CYAN}正在初始化 MiMoASR 引擎...{Color.RESET}")
-    asr_engine = MiMoASR(model_name="mimo-v2-omni", temperature=0.3, top_p=0.95)
+    asr_engine = MiMoASR(model_name="mimo-v2-omni", temperature=0.5, top_p=0.95)
     
     engine_choice = input(f"{Color.YELLOW}请选择文本处理引擎 (1: Gemini, 2: MiMo) [默认 1]: {Color.RESET}").strip()
     if engine_choice == "2":
