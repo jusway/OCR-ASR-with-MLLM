@@ -24,6 +24,13 @@ class BaseASR(ABC):
     ASR (语音识别) 抽象基类，规范统一的调用接口。
     """
 
+    def _compress_audio(self, audio_file_path: str) -> tuple[str, bool]:
+        """
+        内部方法：将音频统一压缩为大模型标准 (16kHz 单声道 mp3)。
+        返回: (处理后的音频路径, 是否生成了临时文件)
+        """
+        return AudioCompressor.compress(audio_file_path)
+
     @abstractmethod
     def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
         """
@@ -47,7 +54,7 @@ class GeminiASR(BaseASR):
         print(f"[Gemini] 正在处理音频文件: {audio_file_path}")
         
         # 统一进行压缩，压缩后的临时文件自带纯英文路径，顺便解决了 httpx 的中文路径报错问题
-        processed_audio_path, is_temp = AudioCompressor.compress(audio_file_path)
+        processed_audio_path, is_temp = self._compress_audio(audio_file_path)
         audio_file = None
             
         try:
@@ -131,7 +138,7 @@ class MiMoASR(BaseASR):
     def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
         print(f"[MiMo] 正在处理音频文件: {audio_file_path}")
 
-        processed_audio_path, is_temp = AudioCompressor.compress(audio_file_path)
+        processed_audio_path, is_temp = self._compress_audio(audio_file_path)
 
         try:
             # 使用 OSS 上传获取 URL
@@ -225,7 +232,7 @@ class QwenASR(BaseASR):
     def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
         print(f"[Qwen] 正在处理音频文件: {audio_file_path}")
 
-        processed_audio_path, is_temp = AudioCompressor.compress(audio_file_path)
+        processed_audio_path, is_temp = self._compress_audio(audio_file_path)
 
         try:
             # 使用 OSS 上传获取 URL
