@@ -14,7 +14,7 @@ class Color:
     """控制台输出颜色代码"""
     RED = '\033[91m'
     GREEN = '\033[92m'
-    DARK_PURPLE = '\033[35m'
+    DARK_PURPLE = '\033[38;5;90m'  # 使用 256 色模式中的深紫色，比原来的 35m 更暗
 
 
 class AudioCompressor:
