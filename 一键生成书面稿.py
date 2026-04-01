@@ -70,13 +70,13 @@ class AudioProcessingPipeline:
         # ==========================================
         # 步骤 1: 整段音频直接转录 (带缓存)
         # ==========================================
-        print(f"\n{Color.DARK_PURPLE}[1/4] 开始处理整段音频转录...{Color.RESET}")
+        print(f"\n{Color.DARK_PURPLE}[1/4] 开始处理整段音频转录...")
         if transcript_filename.exists():
-            print(f"{Color.GREEN}✅ 检测到已存在逐字稿，直接复用: {transcript_filename.name}{Color.RESET}")
+            print(f"{Color.GREEN}✅ 检测到已存在逐字稿，直接复用: {transcript_filename.name}")
             with open(transcript_filename, "r", encoding="utf-8") as f:
                 transcript_text = f.read()
         else:
-            print(f"{Color.DARK_PURPLE}正在调用 ASR 引擎生成逐字稿...{Color.RESET}")
+            print(f"{Color.DARK_PURPLE}正在调用 ASR 引擎生成逐字稿...")
             asr_prompt = asr_user_prompt_template.format(fuzzy_reference_text=fuzzy_reference_text)
             raw_transcript = self.asr_engine.recognize(asr_sys_prompt, asr_prompt, audio_path)
             
@@ -85,18 +85,18 @@ class AudioProcessingPipeline:
 
             with open(transcript_filename, "w", encoding="utf-8") as f:
                 f.write(transcript_text)
-            print(f"{Color.GREEN}逐字稿已保存至: {transcript_filename}{Color.RESET}")
+            print(f"{Color.GREEN}逐字稿已保存至: {transcript_filename}")
 
         # ==========================================
         # 步骤 2: 整理为书面稿 (带缓存)
         # ==========================================
-        print(f"\n{Color.DARK_PURPLE}[2/4] 开始处理书面稿...{Color.RESET}")
+        print(f"\n{Color.DARK_PURPLE}[2/4] 开始处理书面稿...")
         if final_output_filename.exists():
-            print(f"{Color.GREEN}✅ 检测到已存在书面稿，直接复用: {final_output_filename.name}{Color.RESET}")
+            print(f"{Color.GREEN}✅ 检测到已存在书面稿，直接复用: {final_output_filename.name}")
             with open(final_output_filename, "r", encoding="utf-8") as f:
                 written_text = f.read()
         else:
-            print(f"{Color.DARK_PURPLE}正在使用 {self.text_engine.model_name} 将逐字稿整理为书面稿，请耐心等待...{Color.RESET}")
+            print(f"{Color.DARK_PURPLE}正在使用 {self.text_engine.model_name} 将逐字稿整理为书面稿，请耐心等待...")
             user_prompt = text_user_prompt_template.format(
                 fuzzy_reference_text=fuzzy_reference_text,
                 transcript_text=transcript_text
@@ -106,18 +106,18 @@ class AudioProcessingPipeline:
 
             with open(final_output_filename, "w", encoding="utf-8") as f:
                 f.write(written_text)
-            print(f"{Color.GREEN}书面稿已保存至: {final_output_filename}{Color.RESET}")
+            print(f"{Color.GREEN}书面稿已保存至: {final_output_filename}")
 
         # ==========================================
         # 步骤 3: 反向定位精准原文 (带缓存)
         # ==========================================
-        print(f"\n{Color.DARK_PURPLE}[3/4] 开始处理精准原文...{Color.RESET}")
+        print(f"\n{Color.DARK_PURPLE}[3/4] 开始处理精准原文...")
         if exact_text_filename.exists():
-            print(f"{Color.GREEN}✅ 检测到已存在精准原文，直接复用: {exact_text_filename.name}{Color.RESET}")
+            print(f"{Color.GREEN}✅ 检测到已存在精准原文，直接复用: {exact_text_filename.name}")
             with open(exact_text_filename, "r", encoding="utf-8") as f:
                 exact_reference_text = f.read()
         else:
-            print(f"{Color.DARK_PURPLE}正在使用 {self.text_engine.model_name} 从书面稿反向定位精准原文...{Color.RESET}")
+            print(f"{Color.DARK_PURPLE}正在使用 {self.text_engine.model_name} 从书面稿反向定位精准原文...")
             locator_user_prompt = locator_user_prompt_template.format(
                 fuzzy_reference_text=fuzzy_reference_text,
                 written_text=written_text
@@ -127,23 +127,23 @@ class AudioProcessingPipeline:
             
             with open(exact_text_filename, "w", encoding="utf-8") as f:
                 f.write(exact_reference_text)
-            print(f"{Color.GREEN}精准原文已保存至: {exact_text_filename}{Color.RESET}")
+            print(f"{Color.GREEN}精准原文已保存至: {exact_text_filename}")
 
         # ==========================================
         # 步骤 4: 人工补充元数据并插入书面稿
         # ==========================================
-        print(f"\n{Color.DARK_PURPLE}[4/4] 准备补充元数据信息...{Color.RESET}")
+        print(f"\n{Color.DARK_PURPLE}[4/4] 准备补充元数据信息...")
         with open(final_output_filename, "r", encoding="utf-8") as f:
             current_written_text = f.read()
             
         if current_written_text.strip().startswith("> 标题："):
-            print(f"{Color.GREEN}✅ 检测到书面稿已包含元数据，跳过元数据输入。{Color.RESET}")
+            print(f"{Color.GREEN}✅ 检测到书面稿已包含元数据，跳过元数据输入。")
         else:
-            print(f"{Color.RED}请补充以下信息以生成最终文档：{Color.RESET}")
+            print(f"{Color.RED}请补充以下信息以生成最终文档：")
             year = input("请输入音频的创建时间（年份） [直接回车跳过]: ").strip()
             author = input("请输入音频的作者 [直接回车跳过]: ").strip()
             
-            print(f"\n{Color.DARK_PURPLE}提取到的精准原文如下：\n{exact_reference_text}\n{Color.RESET}")
+            print(f"\n{Color.DARK_PURPLE}提取到的精准原文如下：\n{exact_reference_text}\n")
             metadata_original_text = input("请输入音频的原文 [直接回车跳过]: ").strip()
             
             duration = self._get_audio_duration(audio_path)
@@ -161,7 +161,7 @@ class AudioProcessingPipeline:
             final_content = metadata_header + current_written_text
             with open(final_output_filename, "w", encoding="utf-8") as f:
                 f.write(final_content)
-            print(f"{Color.GREEN}✅ 元数据已成功插入书面稿开头！{Color.RESET}")
+            print(f"{Color.GREEN}✅ 元数据已成功插入书面稿开头！")
 
         print(f"\n{Color.GREEN}===========================================")
         print("🎉 全部流程处理完成！")
@@ -169,7 +169,7 @@ class AudioProcessingPipeline:
         print(f"  - 逐字稿: {transcript_filename.name}")
         print(f"  - 书面稿: {final_output_filename.name}")
         print(f"  - 精准原文: {exact_text_filename.name}")
-        print(f"==========================================={Color.RESET}\n")
+        print(f"===========================================\n")
 
 
 if __name__ == "__main__":
@@ -178,15 +178,15 @@ if __name__ == "__main__":
     fuzzy_text_path = "摩诃止观-久仁法师/摩诃止观004/004原文模糊范围.txt"
 
     # ---------------- 初始化引擎 ----------------
-    print(f"{Color.DARK_PURPLE}正在初始化 MiMoASR 引擎...{Color.RESET}")
+    print(f"{Color.DARK_PURPLE}正在初始化 MiMoASR 引擎...")
     asr_engine = MiMoASR(model_name="mimo-v2-omni", temperature=0.5, top_p=0.95)
     
-    engine_choice = input(f"{Color.DARK_PURPLE}请选择文本处理引擎 (1: Gemini, 2: MiMo) [默认 1]: {Color.RESET}").strip()
+    engine_choice = input(f"{Color.DARK_PURPLE}请选择文本处理引擎 (1: Gemini, 2: MiMo) [默认 1]: ").strip()
     if engine_choice == "2":
-        print(f"{Color.DARK_PURPLE}正在初始化 MiMoText 引擎...{Color.RESET}")
+        print(f"{Color.DARK_PURPLE}正在初始化 MiMoText 引擎...")
         text_engine = MiMoText(model_name="mimo-v2-pro", temperature=0.3)
     else:
-        print(f"{Color.DARK_PURPLE}正在初始化 GeminiText 引擎...{Color.RESET}")
+        print(f"{Color.DARK_PURPLE}正在初始化 GeminiText 引擎...")
         text_engine = GeminiText(model_name="gemini-3.1-pro-preview", temperature=0.3)
 
     # ---------------- 系统提示词 ----------------
