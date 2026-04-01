@@ -44,27 +44,16 @@ class GeminiASR(BaseASR):
         self.top_p = top_p
 
     def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
-        print(f"[Gemini] 正在准备上传音频文件: {audio_file_path}")
+        print(f"[Gemini] 正在处理音频文件: {audio_file_path}")
         
-        # 解决中文路径导致 httpx 报 UnicodeEncodeError 的问题
-        # 创建一个纯英文的临时文件进行上传
-        ext = os.path.splitext(audio_file_path)[1]
-        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_file:
-            temp_path = temp_file.name
+        # 统一进行压缩，压缩后的临时文件自带纯英文路径，顺便解决了 httpx 的中文路径报错问题
+        processed_audio_path, is_temp = AudioCompressor.compress(audio_file_path)
+        audio_file = None
             
         try:
-            # 将原文件复制到临时纯英文路径
-            shutil.copy2(audio_file_path, temp_path)
-            print(f"[Gemini] 已创建临时文件以规避中文路径编码问题: {temp_path}")
-            
-            # 使用临时文件上传
-            audio_file = self.client.files.upload(file=temp_path)
-        finally:
-            # 无论上传成功与否，清理本地临时文件
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
+            print(f"[Gemini] 正在上传压缩后的音频文件...")
+            audio_file = self.client.files.upload(file=processed_audio_path)
 
-        try:
             while audio_file.state.name == "PROCESSING":
                 time.sleep(2)
                 audio_file = self.client.files.get(name=audio_file.name)
@@ -108,11 +97,15 @@ class GeminiASR(BaseASR):
                         print(f"\n[Gemini] 重试次数已达上限，放弃请求。")
                         raise e
         finally:
+            # 清理本地临时压缩文件
+            if is_temp and os.path.exists(processed_audio_path):
+                os.remove(processed_audio_path)
             # 确保无论成功还是失败，都清理云端的音频文件，防止泄漏和占用空间
-            try:
-                self.client.files.delete(name=audio_file.name)
-            except Exception:
-                pass
+            if audio_file:
+                try:
+                    self.client.files.delete(name=audio_file.name)
+                except Exception:
+                    pass
 
 
 class MiMoASR(BaseASR):
