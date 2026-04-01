@@ -131,7 +131,7 @@ class MiMoASR(BaseASR):
     使用 Xiaomi MiMo (如 mimo-v2-omni) 模型进行 ASR。
     """
 
-    def __init__(self, model_name: str = "mimo-v2-omni", temperature: float = 0.3, top_p: float = 0.95):
+    def __init__(self, model_name: str = "mimo-v2-omni", temperature: float = 0.5, top_p: float = 0.95):
         # 请确保在使用前在环境变量中设置了 MIMO_API_KEY
         self.api_key = os.environ.get("MIMO_API_KEY")
         if not self.api_key:
@@ -212,6 +212,12 @@ class MiMoASR(BaseASR):
                             text_chunk = chunk.choices[0].delta.content
                             print(text_chunk, end="", flush=True)
                             full_text += text_chunk
+                            
+                            # === 新增：防无限复读打断机制 ===
+                            # 如果最后 30 个字符完全一样（例如连续 30 个"五"），强制抛出异常触发重试
+                            if len(full_text) >= 30 and full_text[-30:] == full_text[-1] * 30:
+                                print(f"\n{Color.RED}[MiMo] ⚠️ 检测到单字无限复读幻觉，强制中断并重试...{Color.RESET}")
+                                raise RuntimeError("检测到无限复读幻觉")
                     print() # 换行
 
                     return full_text
@@ -232,6 +238,17 @@ class MiMoASR(BaseASR):
                         return "\n[⚠️ 此片段内容被 API 安全策略拦截，无法转录]\n"
                     else:
                         # 其他的 BadRequestError 正常抛出
+                        raise e
+                except RuntimeError as e:
+                    if "检测到无限复读幻觉" in str(e):
+                        if attempt < max_retries - 1:
+                            wait_time = (2 ** attempt) * 5
+                            print(f"\n{Color.RED}[MiMo] 触发复读机幻觉，等待 {wait_time} 秒后重试 (第 {attempt + 1}/{max_retries} 次)...{Color.RESET}")
+                            time.sleep(wait_time)
+                        else:
+                            print(f"\n{Color.RED}[MiMo] 重试次数已达上限，放弃请求。{Color.RESET}")
+                            raise e
+                    else:
                         raise e
 
         finally:
