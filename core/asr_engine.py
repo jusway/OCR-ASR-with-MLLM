@@ -90,9 +90,12 @@ class GeminiASR(BaseASR):
                     )
 
                     full_text = ""
+                    print("\n[Gemini 输出]: ", end="", flush=True)
                     for chunk in response_stream:
                         text = chunk.text
+                        print(text, end="", flush=True)
                         full_text += text
+                    print() # 换行
 
                     return full_text
                 except Exception as e:
@@ -175,11 +178,14 @@ class MiMoASR(BaseASR):
                     )
 
                     full_text = ""
+                    print("\n[MiMo 输出]: ", end="", flush=True)
                     for chunk in response_stream:
                         # 流式处理，获取增量文本
                         if chunk.choices and chunk.choices[0].delta.content:
                             text_chunk = chunk.choices[0].delta.content
+                            print(text_chunk, end="", flush=True)
                             full_text += text_chunk
+                    print() # 换行
 
                     return full_text
                 
@@ -271,6 +277,7 @@ class QwenASR(BaseASR):
             for attempt in range(max_retries):
                 try:
                     full_text = ""
+                    print("\n[Qwen 输出]: ", end="", flush=True)
                     with httpx.Client(timeout=None) as client:
                         with client.stream("POST", self.api_url, headers=headers, json=payload) as response:
                             if response.status_code != 200:
@@ -298,11 +305,14 @@ class QwenASR(BaseASR):
                                             if isinstance(content, list):
                                                 for item in content:
                                                     if "text" in item:
+                                                        print(item["text"], end="", flush=True)
                                                         full_text += item["text"]
                                             elif isinstance(content, str):
+                                                print(content, end="", flush=True)
                                                 full_text += content
                                     except json.JSONDecodeError:
                                         pass
+                    print() # 换行
                     return full_text
                 
                 except Exception as e:
@@ -379,7 +389,7 @@ if __name__ == "__main__":
         print(f"--- 开始测试引擎: {engine_name} ---")
         try:
             full_transcription = asr_engine.recognize(system_prompt, prompt, audio_path)
-            print(f"--- {engine_name} 处理完成 ---")
+            print(f"\n--- {engine_name} 处理完成 ---")
 
             output_filename = output_dir / f"{Path(audio_path).stem}_{engine_name}_逐字稿.md"
             with open(output_filename, "w", encoding="utf-8") as f:
