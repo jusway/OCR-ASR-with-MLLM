@@ -335,6 +335,32 @@ class QwenASR(BaseASR):
                 os.remove(processed_audio_path)
 
 
+def clean_repeated_text(text: str) -> str:
+    """
+    简单的后处理：移除连续重复的相同行（常见于ASR在静音处的幻觉）。
+    如果某一行与上一行完全相同，则跳过不输出。
+    """
+    lines = text.split('\n')
+    if not lines:
+        return text
+    
+    cleaned = []
+    for line in lines:
+        stripped_line = line.strip()
+        # 如果是空行，直接保留
+        if not stripped_line:
+            cleaned.append(line)
+            continue
+            
+        # 如果当前行和上一行非空内容完全一样，说明是复读机幻觉，跳过
+        if cleaned and stripped_line == cleaned[-1].strip():
+            continue
+            
+        cleaned.append(line)
+        
+    return '\n'.join(cleaned)
+
+
 if __name__ == "__main__":
     system_prompt = (
         # 角色
@@ -345,7 +371,9 @@ if __name__ == "__main__":
         "保留所有的停顿、口语化表达和重复等所有内容，对音频语音完全忠实。"
         "严格按照用户提供的【原典参考】校对专有名词。"
         "使用简体字输出。"
-        "原典引用的时候使用繁体字。"
+        "原典引用的时候使用繁体字。\n"
+        # 防幻觉指令
+        "【重要警告】：如果遇到音频尾部长时间静音、无意义的背景音或听不清的地方，请直接停止转录，**绝对不要**自行脑补、幻觉或反复输出相同的句子（如多次重复‘南无本师释迦牟尼佛’等）。请务必只转录实际听到的清晰语音！"
     )
 
     prompt_path = r"../摩诃止观-久仁法师/摩诃止观001/001原文模糊范围.txt"  # 记载原文内容
@@ -389,11 +417,15 @@ if __name__ == "__main__":
         print(f"--- 开始测试引擎: {engine_name} ---")
         try:
             full_transcription = asr_engine.recognize(system_prompt, prompt, audio_path)
+            
+            # 进行后处理，剔除连续重复的幻觉行
+            cleaned_transcription = clean_repeated_text(full_transcription)
+            
             print(f"\n--- {engine_name} 处理完成 ---")
 
             output_filename = output_dir / f"{Path(audio_path).stem}_{engine_name}_逐字稿.md"
             with open(output_filename, "w", encoding="utf-8") as f:
-                f.write(full_transcription)
+                f.write(cleaned_transcription)
 
             print(f"✅ {engine_name} 文件已保存为: {output_filename}")
         except Exception as e:
