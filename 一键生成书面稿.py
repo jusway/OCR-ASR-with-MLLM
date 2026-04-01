@@ -31,7 +31,7 @@ def clean_repeated_text(text: str) -> str:
 
 
 class AudioProcessingPipeline:
-    """端到端音频处理流水线：整段转录 -> 定位精准原文 -> 书面化"""
+    """端到端音频处理流水线：整段转录 -> 书面化 -> 反向定位精准原文"""
 
     def __init__(self, asr_engine, text_engine):
         self.asr_engine = asr_engine
@@ -82,12 +82,24 @@ class AudioProcessingPipeline:
         print(f"逐字稿已保存至: {transcript_filename}")
 
         # ==========================================
-        # 步骤 2: 定位精准原文
+        # 步骤 2: 整理为书面稿
         # ==========================================
-        print(f"\n[2/3] 正在使用 {self.text_engine.model_name} 从模糊原文中定位精准原文...")
-        locator_user_prompt = locator_user_prompt_template.format(
+        print(f"\n[2/3] 正在使用 {self.text_engine.model_name} 将逐字稿整理为书面稿，请耐心等待...")
+        # 这里使用模糊原文作为参考进行书面化
+        user_prompt = text_user_prompt_template.format(
             fuzzy_reference_text=fuzzy_reference_text,
             transcript_text=transcript_text
+        )
+
+        written_text = self.text_engine.generate(text_sys_prompt, user_prompt)
+
+        # ==========================================
+        # 步骤 3: 反向定位精准原文
+        # ==========================================
+        print(f"\n[3/3] 正在使用 {self.text_engine.model_name} 从书面稿反向定位精准原文...")
+        locator_user_prompt = locator_user_prompt_template.format(
+            fuzzy_reference_text=fuzzy_reference_text,
+            written_text=written_text
         )
         
         exact_reference_text = self.text_engine.generate(locator_sys_prompt, locator_user_prompt)
@@ -95,18 +107,6 @@ class AudioProcessingPipeline:
         with open(exact_text_filename, "w", encoding="utf-8") as f:
             f.write(exact_reference_text)
         print(f"精准原文已保存至: {exact_text_filename}")
-
-        # ==========================================
-        # 步骤 3: 整理为书面稿
-        # ==========================================
-        print(f"\n[3/3] 正在使用 {self.text_engine.model_name} 将逐字稿整理为书面稿，请耐心等待...")
-        # 这里使用刚刚提取出的精准原文作为参考
-        user_prompt = text_user_prompt_template.format(
-            exact_reference_text=exact_reference_text,
-            transcript_text=transcript_text
-        )
-
-        written_text = self.text_engine.generate(text_sys_prompt, user_prompt)
 
         # ==========================================
         # 步骤 4: 人工补充元数据并生成最终文档
@@ -167,13 +167,6 @@ if __name__ == "__main__":
         "【重要警告】：如果遇到音频尾部长时间静音、无意义的背景音或听不清的地方，请直接停止转录，**绝对不要**自行脑补、幻觉或反复输出相同的句子。请务必只转录实际听到的清晰语音！"
     )
 
-    locator_system_prompt = (
-        "你是一个严谨的校对专家。"
-        "你的任务是根据提供的【语音逐字稿】，在【模糊原文范围】中找出讲法者真正讲到的【精准原文】。"
-        "请严格从【模糊原文范围】中截取，逐字稿中就算提了一下，也要把这段原文囊括到输出结果中。"
-        "只输出截取出的精准原文内容。"
-    )
-
     text_system_prompt = (
         # 角色
         "您是一位资深的佛学逐字录音稿整理的比丘师父。"
@@ -191,18 +184,25 @@ if __name__ == "__main__":
         "只输出文稿内容，不说多余的话。"
     )
 
+    locator_system_prompt = (
+        "你是一个严谨的校对专家。"
+        "你的任务是根据提供的【书面稿】，在【模糊原文范围】中找出讲法者真正讲到的【精准原文】。"
+        "请严格从【模糊原文范围】中截取，书面稿中就算提了一下，也要把这段原文囊括到输出结果中。"
+        "只输出截取出的精准原文内容。"
+    )
+
     # ---------------- 用户提示词模板 ----------------
     asr_user_prompt_template = "【原典参考】\n{fuzzy_reference_text}\n"
 
-    locator_user_prompt_template = (
-        "【模糊原文范围】\n{fuzzy_reference_text}\n\n"
-        "【语音逐字稿】\n{transcript_text}\n\n"
-        "请根据逐字稿的内容，从模糊原文中提取出讲法者实际讲到的精准原文范围。"
+    text_user_prompt_template = (
+        "【原典参考】\n{fuzzy_reference_text}\n\n"
+        "【总逐字稿】\n{transcript_text}\n"
     )
 
-    text_user_prompt_template = (
-        "【原典参考】\n{exact_reference_text}\n\n"
-        "【总逐字稿】\n{transcript_text}\n"
+    locator_user_prompt_template = (
+        "【模糊原文范围】\n{fuzzy_reference_text}\n\n"
+        "【书面稿】\n{written_text}\n\n"
+        "请根据书面稿的内容，从模糊原文中提取出讲法者实际讲到的精准原文范围。"
     )
 
     # ---------------- 运行流水线 ----------------
