@@ -79,6 +79,9 @@ class GeminiASR(BaseASR):
             for attempt in range(max_retries):
                 try:
                     print(f"[Gemini] 正在提交给模型处理 (尝试 {attempt + 1}/{max_retries})...")
+                    print(f"[Gemini] ⏳ 提示：长音频（如1小时）需要2-5分钟的深度理解时间，请耐心等待模型思考，不要关闭程序...")
+                    
+                    start_wait_time = time.time()
                     response_stream = self.client.models.generate_content_stream(
                         model=self.model_name,
                         contents=[audio_file, prompt],
@@ -86,8 +89,15 @@ class GeminiASR(BaseASR):
                     )
 
                     full_text = ""
-                    print("\n[Gemini 输出]: ", end="", flush=True)
+                    first_chunk = True
+                    
                     for chunk in response_stream:
+                        if first_chunk:
+                            wait_duration = time.time() - start_wait_time
+                            print(f"\n[Gemini] 💡 模型思考完毕！耗时: {wait_duration:.1f} 秒。开始输出:")
+                            print("[Gemini 输出]: ", end="", flush=True)
+                            first_chunk = False
+                            
                         text = chunk.text
                         print(text, end="", flush=True)
                         full_text += text
@@ -163,10 +173,12 @@ class MiMoASR(BaseASR):
             ]
 
             print("[MiMo] 正在提交给模型处理...")
+            print(f"[MiMo] ⏳ 提示：长音频（如1小时）需要较长时间的深度理解，请耐心等待模型思考，不要关闭程序...")
 
             max_retries = 6
             for attempt in range(max_retries):
                 try:
+                    start_wait_time = time.time()
                     # 官方文档指出 mimo-v2-omni 默认最大 token 是 32768
                     response_stream = self.client.chat.completions.create(
                         model=self.model_name,
@@ -178,10 +190,17 @@ class MiMoASR(BaseASR):
                     )
 
                     full_text = ""
-                    print("\n[MiMo 输出]: ", end="", flush=True)
+                    first_chunk = True
+                    
                     for chunk in response_stream:
                         # 流式处理，获取增量文本
                         if chunk.choices and chunk.choices[0].delta.content:
+                            if first_chunk:
+                                wait_duration = time.time() - start_wait_time
+                                print(f"\n[MiMo] 💡 模型思考完毕！耗时: {wait_duration:.1f} 秒。开始输出:")
+                                print("[MiMo 输出]: ", end="", flush=True)
+                                first_chunk = False
+                                
                             text_chunk = chunk.choices[0].delta.content
                             print(text_chunk, end="", flush=True)
                             full_text += text_chunk
@@ -272,12 +291,15 @@ class QwenASR(BaseASR):
             }
 
             print("[Qwen] 正在提交给模型处理...")
+            print(f"[Qwen] ⏳ 提示：长音频（如1小时）需要较长时间的深度理解，请耐心等待模型思考，不要关闭程序...")
 
             max_retries = 6
             for attempt in range(max_retries):
                 try:
                     full_text = ""
-                    print("\n[Qwen 输出]: ", end="", flush=True)
+                    first_chunk = True
+                    start_wait_time = time.time()
+                    
                     with httpx.Client(timeout=None) as client:
                         with client.stream("POST", self.api_url, headers=headers, json=payload) as response:
                             if response.status_code != 200:
@@ -305,9 +327,19 @@ class QwenASR(BaseASR):
                                             if isinstance(content, list):
                                                 for item in content:
                                                     if "text" in item:
+                                                        if first_chunk:
+                                                            wait_duration = time.time() - start_wait_time
+                                                            print(f"\n[Qwen] 💡 模型思考完毕！耗时: {wait_duration:.1f} 秒。开始输出:")
+                                                            print("[Qwen 输出]: ", end="", flush=True)
+                                                            first_chunk = False
                                                         print(item["text"], end="", flush=True)
                                                         full_text += item["text"]
                                             elif isinstance(content, str):
+                                                if first_chunk:
+                                                    wait_duration = time.time() - start_wait_time
+                                                    print(f"\n[Qwen] 💡 模型思考完毕！耗时: {wait_duration:.1f} 秒。开始输出:")
+                                                    print("[Qwen 输出]: ", end="", flush=True)
+                                                    first_chunk = False
                                                 print(content, end="", flush=True)
                                                 full_text += content
                                     except json.JSONDecodeError:
