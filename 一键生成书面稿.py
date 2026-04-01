@@ -31,7 +31,7 @@ def clean_repeated_text(text: str) -> str:
 
 
 class AudioProcessingPipeline:
-    """端到端音频处理流水线：整段转录 -> 书面化 -> 反向定位精准原文"""
+    """端到端音频处理流水线：整段转录 -> 书面化 -> 反向定位精准原文 -> 补充元数据"""
 
     def __init__(self, asr_engine, text_engine):
         self.asr_engine = asr_engine
@@ -87,31 +87,9 @@ class AudioProcessingPipeline:
             print(f"逐字稿已保存至: {transcript_filename}")
 
         # ==========================================
-        # 步骤 2: 人工补充元数据
+        # 步骤 2: 整理为书面稿 (带缓存)
         # ==========================================
-        print("\n[2/4] 准备生成书面稿，请先补充元数据信息：")
-        if final_output_filename.exists():
-            print("✅ 检测到已存在书面稿，跳过元数据输入。")
-        else:
-            year = input("请输入音频的创建时间（年份） [直接回车跳过]: ").strip()
-            author = input("请输入音频的作者 [直接回车跳过]: ").strip()
-            metadata_original_text = input("请输入音频的原文 [直接回车跳过]: ").strip()
-            duration = self._get_audio_duration(audio_path)
-            
-            metadata_header = (
-                f"> 标题：{base_name}\n"
-                f"> 时间：{year}\n"
-                f"> 时长：{duration}\n"
-                f"> 作者：{author}\n"
-                f"> 原文：{metadata_original_text}\n"
-                "\n"
-                "---\n\n"
-            )
-
-        # ==========================================
-        # 步骤 3: 整理为书面稿 (带缓存)
-        # ==========================================
-        print("\n[3/4] 开始处理书面稿...")
+        print("\n[2/4] 开始处理书面稿...")
         if final_output_filename.exists():
             print(f"✅ 检测到已存在书面稿，直接复用: {final_output_filename.name}")
             with open(final_output_filename, "r", encoding="utf-8") as f:
@@ -123,17 +101,16 @@ class AudioProcessingPipeline:
                 transcript_text=transcript_text
             )
 
-            generated_written_text = self.text_engine.generate(text_sys_prompt, user_prompt)
-            written_text = metadata_header + generated_written_text
+            written_text = self.text_engine.generate(text_sys_prompt, user_prompt)
 
             with open(final_output_filename, "w", encoding="utf-8") as f:
                 f.write(written_text)
             print(f"书面稿已保存至: {final_output_filename}")
 
         # ==========================================
-        # 步骤 4: 反向定位精准原文 (带缓存)
+        # 步骤 3: 反向定位精准原文 (带缓存)
         # ==========================================
-        print("\n[4/4] 开始处理精准原文...")
+        print("\n[3/4] 开始处理精准原文...")
         if exact_text_filename.exists():
             print(f"✅ 检测到已存在精准原文，直接复用: {exact_text_filename.name}")
             with open(exact_text_filename, "r", encoding="utf-8") as f:
@@ -150,6 +127,40 @@ class AudioProcessingPipeline:
             with open(exact_text_filename, "w", encoding="utf-8") as f:
                 f.write(exact_reference_text)
             print(f"精准原文已保存至: {exact_text_filename}")
+
+        # ==========================================
+        # 步骤 4: 人工补充元数据并插入书面稿
+        # ==========================================
+        print("\n[4/4] 准备补充元数据信息...")
+        with open(final_output_filename, "r", encoding="utf-8") as f:
+            current_written_text = f.read()
+            
+        if current_written_text.strip().startswith("> 标题："):
+            print("✅ 检测到书面稿已包含元数据，跳过元数据输入。")
+        else:
+            print("请补充以下信息以生成最终文档：")
+            year = input("请输入音频的创建时间（年份） [直接回车跳过]: ").strip()
+            author = input("请输入音频的作者 [直接回车跳过]: ").strip()
+            
+            print(f"\n提取到的精准原文如下：\n{exact_reference_text}\n")
+            metadata_original_text = input("请输入音频的原文 [直接回车跳过]: ").strip()
+            
+            duration = self._get_audio_duration(audio_path)
+            
+            metadata_header = (
+                f"> 标题：{base_name}\n"
+                f"> 时间：{year}\n"
+                f"> 时长：{duration}\n"
+                f"> 作者：{author}\n"
+                f"> 原文：{metadata_original_text}\n"
+                "\n"
+                "---\n\n"
+            )
+            
+            final_content = metadata_header + current_written_text
+            with open(final_output_filename, "w", encoding="utf-8") as f:
+                f.write(final_content)
+            print(f"✅ 元数据已成功插入书面稿开头！")
 
         print("\n===========================================")
         print("🎉 全部流程处理完成！")
