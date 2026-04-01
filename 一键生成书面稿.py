@@ -31,7 +31,7 @@ def clean_repeated_text(text: str) -> str:
 
 
 class AudioProcessingPipeline:
-    """端到端音频处理流水线：整段转录 -> 书面化"""
+    """端到端音频处理流水线：整段转录 -> 定位精准原文 -> 书面化"""
 
     def __init__(self, asr_engine, text_engine):
         self.asr_engine = asr_engine
@@ -44,23 +44,24 @@ class AudioProcessingPipeline:
         minutes, seconds = divmod(remainder, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-    def run(self, audio_path, fuzzy_text_path, asr_sys_prompt, text_sys_prompt):
+    def run(self, audio_path, fuzzy_text_path, asr_sys_prompt, locator_sys_prompt, text_sys_prompt):
         audio_path_obj = Path(audio_path)
         base_name = audio_path_obj.stem
         parent_dir = audio_path_obj.parent
 
         transcript_filename = parent_dir / f"{base_name}_逐字稿.md"
+        exact_text_filename = parent_dir / f"{base_name}_精准原文.txt"
         final_output_filename = parent_dir / f"{base_name}_书面稿.md"
 
         # 读取模糊范围的原文
         with open(fuzzy_text_path, "r", encoding="utf-8") as f:
-            reference_text = f.read()
+            fuzzy_reference_text = f.read()
 
         # ==========================================
         # 步骤 1: 整段音频直接转录
         # ==========================================
-        print("\n[1/2] 开始进行整段音频转录...")
-        asr_prompt = f"【原典参考】\n{reference_text}\n"
+        print("\n[1/3] 开始进行整段音频转录...")
+        asr_prompt = f"【原典参考】\n{fuzzy_reference_text}\n"
         
         raw_transcript = self.asr_engine.recognize(asr_sys_prompt, asr_prompt, audio_path)
         
@@ -72,26 +73,49 @@ class AudioProcessingPipeline:
         print(f"逐字稿已保存至: {transcript_filename}")
 
         # ==========================================
-        # 步骤 2: 整理为书面稿
+        # 步骤 2: 定位精准原文
         # ==========================================
-        print(f"\n[2/2] 正在使用 {self.text_engine.model_name} 将逐字稿整理为书面稿，请耐心等待...")
-        user_prompt = f"【原典参考】\n{reference_text}\n\n【总逐字稿】\n{transcript_text}\n"
+        print(f"\n[2/3] 正在使用 {self.text_engine.model_name} 从模糊原文中定位精准原文...")
+        locator_user_prompt = (
+            f"【模糊原文范围】\n{fuzzy_reference_text}\n\n"
+            f"【语音逐字稿】\n{transcript_text}\n\n"
+            "请根据逐字稿的内容，从模糊原文中提取出讲法者实际讲到的精准原文范围。"
+        )
+        
+        exact_reference_text = self.text_engine.generate(locator_sys_prompt, locator_user_prompt)
+        
+        with open(exact_text_filename, "w", encoding="utf-8") as f:
+            f.write(exact_reference_text)
+        print(f"精准原文已保存至: {exact_text_filename}")
+
+        # ==========================================
+        # 步骤 3: 整理为书面稿
+        # ==========================================
+        print(f"\n[3/3] 正在使用 {self.text_engine.model_name} 将逐字稿整理为书面稿，请耐心等待...")
+        # 这里使用刚刚提取出的精准原文作为参考
+        user_prompt = f"【原典参考】\n{exact_reference_text}\n\n【总逐字稿】\n{transcript_text}\n"
 
         written_text = self.text_engine.generate(text_sys_prompt, user_prompt)
 
         # ==========================================
-        # 步骤 3: 人工补充元数据并生成最终文档
+        # 步骤 4: 人工补充元数据并生成最终文档
         # ==========================================
         print("\n===========================================")
         print("✅ API 文本处理全部完成！")
         print(f"💡 提示：您可以现在去本地文件夹查看刚生成的中间文件：")
         print(f"  - {transcript_filename.name}")
+        print(f"  - {exact_text_filename.name}")
         print("参考上述文件内容后，请补充以下信息以生成最终文档：")
         print("===========================================\n")
 
         year = input("请输入音频的创建时间（年份）: ")
         author = input("请输入音频的作者: ")
-        metadata_original_text = input("请输入音频的原文: ")
+        
+        # 默认可以直接使用提取出的精准原文，如果用户想手动修改也可以输入
+        print(f"\n提取到的精准原文如下：\n{exact_reference_text}\n")
+        metadata_original_text = input("请输入音频的原文 (直接回车则默认使用上述提取的精准原文): ")
+        if not metadata_original_text.strip():
+            metadata_original_text = exact_reference_text.strip()
 
         duration = self._get_audio_duration(audio_path)
         metadata_header = (
@@ -135,6 +159,13 @@ if __name__ == "__main__":
         "【重要警告】：如果遇到音频尾部长时间静音、无意义的背景音或听不清的地方，请直接停止转录，**绝对不要**自行脑补、幻觉或反复输出相同的句子。请务必只转录实际听到的清晰语音！"
     )
 
+    locator_system_prompt = (
+        "你是一个严谨的古籍校对专家。"
+        "你的任务是根据提供的【语音逐字稿】，在【模糊原文范围】中找出讲法者真正讲到的【精准原文】。"
+        "请严格从【模糊原文范围】中截取，不要修改原文的任何字词，不要输出多余的解释或标点符号。"
+        "只输出截取出的精准原文内容。"
+    )
+
     text_system_prompt = (
         # 角色
         "您是一位资深的佛学逐字录音稿整理的比丘师父。"
@@ -162,5 +193,6 @@ if __name__ == "__main__":
         audio_path=audio_path,
         fuzzy_text_path=fuzzy_text_path,
         asr_sys_prompt=asr_system_prompt,
+        locator_sys_prompt=locator_system_prompt,
         text_sys_prompt=text_system_prompt
     )
