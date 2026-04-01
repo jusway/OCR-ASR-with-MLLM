@@ -45,7 +45,7 @@ class GeminiASR(BaseASR):
     使用 Google Gemini 模型进行 ASR。
     """
 
-    def __init__(self, model_name: str, temperature: float = 0.1, top_p: float = 0.95):
+    def __init__(self, model_name: str, temperature: float = 0.5, top_p: float = 0.95):
         self.client = genai.Client(http_options={'timeout': None})
         self.model_name = model_name
         self.temperature = temperature
@@ -263,7 +263,7 @@ class QwenASR(BaseASR):
     由于阿里云百炼的 OpenAI 兼容接口暂不支持 audio_url，这里改用原生多模态 API。
     """
 
-    def __init__(self, model_name: str = "qwen3.5-omni-plus", temperature: float = 0.1, top_p: float = 0.95):
+    def __init__(self, model_name: str = "qwen3.5-omni-plus", temperature: float = 0.5, top_p: float = 0.95):
         self.api_key = os.environ.get("DASHSCOPE_API_KEY")
         if not self.api_key:
             raise ValueError("未检测到 DASHSCOPE_API_KEY 环境变量，请先设置阿里云 API Key。")

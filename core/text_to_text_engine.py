@@ -31,7 +31,7 @@ class BaseTextModel(ABC):
 # Gemini 实现类
 # ==========================================
 class GeminiText(BaseTextModel):
-    def __init__(self, model_name: str = "gemini-3.1-pro-preview", temperature: float = 0.7, top_p: float = 0.95):
+    def __init__(self, model_name: str = "gemini-3.1-pro-preview", temperature: float = 0.5, top_p: float = 0.95):
         super().__init__(model_name, temperature, top_p)
         self.client = genai.Client(http_options={'timeout': None})
 
@@ -68,7 +68,7 @@ class GeminiText(BaseTextModel):
 # MiMo 实现类 (OpenAI 兼容接口)
 # ==========================================
 class MiMoText(BaseTextModel):
-    def __init__(self, model_name: str = "mimo-v2-pro", temperature: float = 1.0, top_p: float = 0.95,
+    def __init__(self, model_name: str = "mimo-v2-pro", temperature: float = 0.5, top_p: float = 0.95,
                  api_key: str = None):
         super().__init__(model_name, temperature, top_p)
         self.api_key = api_key or os.getenv("MIMO_API_KEY")
@@ -122,5 +122,3 @@ class MiMoText(BaseTextModel):
                             yield delta['content']
                     except json.JSONDecodeError:
                         continue
-
-
