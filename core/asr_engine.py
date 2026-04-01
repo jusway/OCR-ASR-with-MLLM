@@ -353,26 +353,38 @@ if __name__ == "__main__":
     {prompt_text}
     """
 
-    # --- 灵活切换 ASR 引擎 ---
-    # 使用 Gemini:
-    # asr_engine = GeminiASR(model_name="gemini-3.1-pro-preview", temperature=0.1, top_p=0.95)
+    engines_to_test = []
 
-    # 或者使用 MiMo:
-    # 请确保在终端执行前：export MIMO_API_KEY="你的key"
-    print("正在初始化 MiMoASR 引擎...")
-    asr_engine = MiMoASR(model_name="mimo-v2-omni", temperature=0.1, top_p=0.95)
+    # 初始化 Gemini
+    try:
+        print("正在初始化 GeminiASR 引擎...")
+        engines_to_test.append(GeminiASR(model_name="gemini-3.1-pro-preview", temperature=0.1, top_p=0.95))
+    except Exception as e:
+        print(f"GeminiASR 初始化失败: {e}")
 
-    # 或者使用 Qwen:
-    # 请确保在终端执行前：export DASHSCOPE_API_KEY="你的key"
-    # print("正在初始化 QwenASR 引擎...")
-    # asr_engine = QwenASR(model_name="qwen3.5-omni-plus", temperature=0.1, top_p=0.95)
+    # 初始化 MiMo
+    try:
+        print("正在初始化 MiMoASR 引擎...")
+        engines_to_test.append(MiMoASR(model_name="mimo-v2-omni", temperature=0.1, top_p=0.95))
+    except Exception as e:
+        print(f"MiMoASR 初始化失败: {e}")
 
-    print("--- 任务开始 ---")
-    full_transcription = asr_engine.recognize(system_prompt, prompt, audio_path)
-    print("--- 处理完成 ---")
+    # 确定输出目录为音频所在文件夹
+    output_dir = Path(audio_path).parent
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    output_filename = f"{Path(audio_path).stem}_{type(asr_engine).__name__}_逐字稿.md"
-    with open(output_filename, "w", encoding="utf-8") as f:
-        f.write(full_transcription)
+    for asr_engine in engines_to_test:
+        engine_name = type(asr_engine).__name__
+        print(f"\n{'='*40}")
+        print(f"--- 开始测试引擎: {engine_name} ---")
+        try:
+            full_transcription = asr_engine.recognize(system_prompt, prompt, audio_path)
+            print(f"--- {engine_name} 处理完成 ---")
 
-    print(f"✅ 文件已保存为: {output_filename}")
+            output_filename = output_dir / f"{Path(audio_path).stem}_{engine_name}_逐字稿.md"
+            with open(output_filename, "w", encoding="utf-8") as f:
+                f.write(full_transcription)
+
+            print(f"✅ {engine_name} 文件已保存为: {output_filename}")
+        except Exception as e:
+            print(f"❌ {engine_name} 测试过程中发生错误: {e}")
