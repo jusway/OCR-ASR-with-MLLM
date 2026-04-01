@@ -52,14 +52,14 @@ class GeminiASR(BaseASR):
         self.top_p = top_p
 
     def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
-        print(f"{Color.MAGENTA}[Gemini] 正在处理音频文件: {audio_file_path}{Color.RESET}")
+        print(f"{Color.DARK_PURPLE}[Gemini] 正在处理音频文件: {audio_file_path}")
         
         # 统一进行压缩，压缩后的临时文件自带纯英文路径，顺便解决了 httpx 的中文路径报错问题
         processed_audio_path, is_temp = self._compress_audio(audio_file_path)
         audio_file = None
             
         try:
-            print(f"{Color.MAGENTA}[Gemini] 正在上传压缩后的音频文件...{Color.RESET}")
+            print(f"{Color.DARK_PURPLE}[Gemini] 正在上传压缩后的音频文件...")
             audio_file = self.client.files.upload(file=processed_audio_path)
 
             while audio_file.state.name == "PROCESSING":
@@ -67,7 +67,7 @@ class GeminiASR(BaseASR):
                 audio_file = self.client.files.get(name=audio_file.name)
 
             if audio_file.state.name == "FAILED":
-                raise RuntimeError(f"{Color.RED}[Gemini] 云端音频文件处理失败: {audio_file.name}{Color.RESET}")
+                raise RuntimeError(f"{Color.RED}[Gemini] 云端音频文件处理失败: {audio_file.name}")
 
             config = types.GenerateContentConfig(
                 system_instruction=system_prompt,
@@ -79,8 +79,8 @@ class GeminiASR(BaseASR):
             max_retries = 5
             for attempt in range(max_retries):
                 try:
-                    print(f"{Color.MAGENTA}[Gemini] 正在提交给模型处理 (尝试 {attempt + 1}/{max_retries})...{Color.RESET}")
-                    print(f"{Color.MAGENTA}[Gemini] ⏳ 提示：长音频（如1小时）需要2-5分钟的深度理解时间，请耐心等待模型思考，不要关闭程序...{Color.RESET}")
+                    print(f"{Color.DARK_PURPLE}[Gemini] 正在提交给模型处理 (尝试 {attempt + 1}/{max_retries})...")
+                    print(f"{Color.DARK_PURPLE}[Gemini] ⏳ 提示：长音频（如1小时）需要2-5分钟的深度理解时间，请耐心等待模型思考，不要关闭程序...")
                     
                     start_wait_time = time.time()
                     response_stream = self.client.models.generate_content_stream(
@@ -95,8 +95,8 @@ class GeminiASR(BaseASR):
                     for chunk in response_stream:
                         if first_chunk:
                             wait_duration = time.time() - start_wait_time
-                            print(f"\n{Color.GREEN}[Gemini] 💡 模型思考完毕！耗时: {wait_duration:.1f} 秒。开始输出:{Color.RESET}")
-                            print(f"{Color.GREEN}[Gemini 输出]: {Color.RESET}", end="", flush=True)
+                            print(f"\n{Color.GREEN}[Gemini] 💡 模型思考完毕！耗时: {wait_duration:.1f} 秒。开始输出:")
+                            print(f"{Color.GREEN}[Gemini 输出]: ", end="", flush=True)
                             first_chunk = False
                             
                         text = chunk.text
@@ -109,10 +109,10 @@ class GeminiASR(BaseASR):
                     # 捕获网络断开、超时等异常
                     if attempt < max_retries - 1:
                         wait_time = (2 ** attempt) * 5
-                        print(f"\n{Color.RED}[Gemini] 发生网络或API异常 ({type(e).__name__})，等待 {wait_time} 秒后重试...{Color.RESET}")
+                        print(f"\n{Color.RED}[Gemini] 发生网络或API异常 ({type(e).__name__})，等待 {wait_time} 秒后重试...")
                         time.sleep(wait_time)
                     else:
-                        print(f"\n{Color.RED}[Gemini] 重试次数已达上限，放弃请求。{Color.RESET}")
+                        print(f"\n{Color.RED}[Gemini] 重试次数已达上限，放弃请求。")
                         raise e
         finally:
             # 清理本地临时压缩文件
@@ -147,7 +147,7 @@ class MiMoASR(BaseASR):
         self.top_p = top_p
 
     def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
-        print(f"{Color.MAGENTA}[MiMo] 正在处理音频文件: {audio_file_path}{Color.RESET}")
+        print(f"{Color.DARK_PURPLE}[MiMo] 正在处理音频文件: {audio_file_path}")
 
         uploader = OSSAudioUploader()
         original_filename = os.path.basename(audio_file_path)
@@ -180,8 +180,8 @@ class MiMoASR(BaseASR):
                 }
             ]
 
-            print(f"{Color.MAGENTA}[MiMo] 正在提交给模型处理...{Color.RESET}")
-            print(f"{Color.MAGENTA}[MiMo] ⏳ 提示：长音频（如1小时）需要较长时间的深度理解，请耐心等待模型思考，不要关闭程序...{Color.RESET}")
+            print(f"{Color.DARK_PURPLE}[MiMo] 正在提交给模型处理...")
+            print(f"{Color.DARK_PURPLE}[MiMo] ⏳ 提示：长音频（如1小时）需要较长时间的深度理解，请耐心等待模型思考，不要关闭程序...")
 
             max_retries = 6
             for attempt in range(max_retries):
@@ -205,8 +205,8 @@ class MiMoASR(BaseASR):
                         if chunk.choices and chunk.choices[0].delta.content:
                             if first_chunk:
                                 wait_duration = time.time() - start_wait_time
-                                print(f"\n{Color.GREEN}[MiMo] 💡 模型思考完毕！耗时: {wait_duration:.1f} 秒。开始输出:{Color.RESET}")
-                                print(f"{Color.GREEN}[MiMo 输出]: {Color.RESET}", end="", flush=True)
+                                print(f"\n{Color.GREEN}[MiMo] 💡 模型思考完毕！耗时: {wait_duration:.1f} 秒。开始输出:")
+                                print(f"{Color.GREEN}[MiMo 输出]: ", end="", flush=True)
                                 first_chunk = False
                                 
                             text_chunk = chunk.choices[0].delta.content
@@ -216,7 +216,7 @@ class MiMoASR(BaseASR):
                             # === 新增：防无限复读打断机制 ===
                             # 如果最后 30 个字符完全一样（例如连续 30 个"五"），强制抛出异常触发重试
                             if len(full_text) >= 30 and full_text[-30:] == full_text[-1] * 30:
-                                print(f"\n{Color.RED}[MiMo] ⚠️ 检测到单字无限复读幻觉，强制中断并重试...{Color.RESET}")
+                                print(f"\n{Color.RED}[MiMo] ⚠️ 检测到单字无限复读幻觉，强制中断并重试...")
                                 raise RuntimeError("检测到无限复读幻觉")
                     print() # 换行
 
@@ -225,16 +225,16 @@ class MiMoASR(BaseASR):
                 except openai.RateLimitError as e:
                     if attempt < max_retries - 1:
                         wait_time = (2 ** attempt) * 5  # 指数退避: 5s, 10s, 20s, 40s...
-                        print(f"\n{Color.RED}[MiMo] 触发并发限制 (429 Too many requests)，等待 {wait_time} 秒后重试 (第 {attempt + 1}/{max_retries} 次)...{Color.RESET}")
+                        print(f"\n{Color.RED}[MiMo] 触发并发限制 (429 Too many requests)，等待 {wait_time} 秒后重试 (第 {attempt + 1}/{max_retries} 次)...")
                         time.sleep(wait_time)
                     else:
-                        print(f"\n{Color.RED}[MiMo] 重试次数已达上限，放弃请求。{Color.RESET}")
+                        print(f"\n{Color.RED}[MiMo] 重试次数已达上限，放弃请求。")
                         raise e
                 except openai.BadRequestError as e:
                     error_msg = str(e)
                     # 捕获内容风控拦截 (Moderation Block / 421)
                     if '421' in error_msg or 'content_filter' in error_msg or 'Moderation Block' in error_msg:
-                        print(f"\n{Color.RED}[MiMo] ⚠️ 警告: 该片段触发了 API 的安全审核策略 (Moderation Block)，已被拦截。将跳过此片段。{Color.RESET}")
+                        print(f"\n{Color.RED}[MiMo] ⚠️ 警告: 该片段触发了 API 的安全审核策略 (Moderation Block)，已被拦截。将跳过此片段。")
                         return "\n[⚠️ 此片段内容被 API 安全策略拦截，无法转录]\n"
                     else:
                         # 其他的 BadRequestError 正常抛出
@@ -243,10 +243,10 @@ class MiMoASR(BaseASR):
                     if "检测到无限复读幻觉" in str(e):
                         if attempt < max_retries - 1:
                             wait_time = (2 ** attempt) * 5
-                            print(f"\n{Color.RED}[MiMo] 触发复读机幻觉，等待 {wait_time} 秒后重试 (第 {attempt + 1}/{max_retries} 次)...{Color.RESET}")
+                            print(f"\n{Color.RED}[MiMo] 触发复读机幻觉，等待 {wait_time} 秒后重试 (第 {attempt + 1}/{max_retries} 次)...")
                             time.sleep(wait_time)
                         else:
-                            print(f"\n{Color.RED}[MiMo] 重试次数已达上限，放弃请求。{Color.RESET}")
+                            print(f"\n{Color.RED}[MiMo] 重试次数已达上限，放弃请求。")
                             raise e
                     else:
                         raise e
@@ -274,7 +274,7 @@ class QwenASR(BaseASR):
         self.api_url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 
     def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
-        print(f"{Color.MAGENTA}[Qwen] 正在处理音频文件: {audio_file_path}{Color.RESET}")
+        print(f"{Color.DARK_PURPLE}[Qwen] 正在处理音频文件: {audio_file_path}")
 
         uploader = OSSAudioUploader()
         original_filename = os.path.basename(audio_file_path)
@@ -322,8 +322,8 @@ class QwenASR(BaseASR):
                 "X-DashScope-OssResourceResolve": "enable"  # 允许解析 OSS 等临时链接
             }
 
-            print(f"{Color.MAGENTA}[Qwen] 正在提交给模型处理...{Color.RESET}")
-            print(f"{Color.MAGENTA}[Qwen] ⏳ 提示：长音频（如1小时）需要较长时间的深度理解，请耐心等待模型思考，不要关闭程序...{Color.RESET}")
+            print(f"{Color.DARK_PURPLE}[Qwen] 正在提交给模型处理...")
+            print(f"{Color.DARK_PURPLE}[Qwen] ⏳ 提示：长音频（如1小时）需要较长时间的深度理解，请耐心等待模型思考，不要关闭程序...")
 
             max_retries = 6
             for attempt in range(max_retries):
@@ -339,11 +339,11 @@ class QwenASR(BaseASR):
                                 if "Throttling" in error_text or "TooManyRequests" in error_text:
                                     raise Exception(f"RateLimit: {error_text}")
                                 elif "DataInspectionFailed" in error_text:
-                                    print(f"\n{Color.RED}[Qwen] ⚠️ 警告: 该片段触发了 API 的安全审核策略，已被拦截。将跳过此片段。{Color.RESET}")
+                                    print(f"\n{Color.RED}[Qwen] ⚠️ 警告: 该片段触发了 API 的安全审核策略，已被拦截。将跳过此片段。")
                                     return "\n[⚠️ 此片段内容被 API 安全策略拦截，无法转录]\n"
                                 else:
                                     if response.status_code == 403:
-                                        print(f"\n{Color.RED}[Qwen] ⚠️ 403 AccessDenied: 请确保您已在阿里云百炼控制台开通并申请了该模型的使用权限，或者检查 OSS 链接是否可访问。{Color.RESET}")
+                                        print(f"\n{Color.RED}[Qwen] ⚠️ 403 AccessDenied: 请确保您已在阿里云百炼控制台开通并申请了该模型的使用权限，或者检查 OSS 链接是否可访问。")
                                     raise RuntimeError(f"DashScope API Error ({response.status_code}): {error_text}")
 
                             for line in response.iter_lines():
@@ -361,16 +361,16 @@ class QwenASR(BaseASR):
                                                     if "text" in item:
                                                         if first_chunk:
                                                             wait_duration = time.time() - start_wait_time
-                                                            print(f"\n{Color.GREEN}[Qwen] 💡 模型思考完毕！耗时: {wait_duration:.1f} 秒。开始输出:{Color.RESET}")
-                                                            print(f"{Color.GREEN}[Qwen 输出]: {Color.RESET}", end="", flush=True)
+                                                            print(f"\n{Color.GREEN}[Qwen] 💡 模型思考完毕！耗时: {wait_duration:.1f} 秒。开始输出:")
+                                                            print(f"{Color.GREEN}[Qwen 输出]: ", end="", flush=True)
                                                             first_chunk = False
                                                         print(item["text"], end="", flush=True)
                                                         full_text += item["text"]
                                             elif isinstance(content, str):
                                                 if first_chunk:
                                                     wait_duration = time.time() - start_wait_time
-                                                    print(f"\n{Color.GREEN}[Qwen] 💡 模型思考完毕！耗时: {wait_duration:.1f} 秒。开始输出:{Color.RESET}")
-                                                    print(f"{Color.GREEN}[Qwen 输出]: {Color.RESET}", end="", flush=True)
+                                                    print(f"\n{Color.GREEN}[Qwen] 💡 模型思考完毕！耗时: {wait_duration:.1f} 秒。开始输出:")
+                                                    print(f"{Color.GREEN}[Qwen 输出]: ", end="", flush=True)
                                                     first_chunk = False
                                                 print(content, end="", flush=True)
                                                 full_text += content
@@ -384,10 +384,10 @@ class QwenASR(BaseASR):
                     if "RateLimit" in error_msg or isinstance(e, httpx.RequestError):
                         if attempt < max_retries - 1:
                             wait_time = (2 ** attempt) * 5
-                            print(f"\n{Color.RED}[Qwen] 触发并发限制或网络异常，等待 {wait_time} 秒后重试 (第 {attempt + 1}/{max_retries} 次)...{Color.RESET}")
+                            print(f"\n{Color.RED}[Qwen] 触发并发限制或网络异常，等待 {wait_time} 秒后重试 (第 {attempt + 1}/{max_retries} 次)...")
                             time.sleep(wait_time)
                         else:
-                            print(f"\n{Color.RED}[Qwen] 重试次数已达上限，放弃请求。{Color.RESET}")
+                            print(f"\n{Color.RED}[Qwen] 重试次数已达上限，放弃请求。")
                             raise e
                     else:
                         # 其他不可恢复的错误直接抛出
