@@ -44,7 +44,16 @@ class AudioProcessingPipeline:
         minutes, seconds = divmod(remainder, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-    def run(self, audio_path, fuzzy_text_path, asr_sys_prompt, locator_sys_prompt, text_sys_prompt):
+    def run(self, 
+            audio_path, 
+            fuzzy_text_path, 
+            asr_sys_prompt, 
+            locator_sys_prompt, 
+            text_sys_prompt,
+            asr_user_prompt_template,
+            locator_user_prompt_template,
+            text_user_prompt_template):
+        
         audio_path_obj = Path(audio_path)
         base_name = audio_path_obj.stem
         parent_dir = audio_path_obj.parent
@@ -61,7 +70,7 @@ class AudioProcessingPipeline:
         # 步骤 1: 整段音频直接转录
         # ==========================================
         print("\n[1/3] 开始进行整段音频转录...")
-        asr_prompt = f"【原典参考】\n{fuzzy_reference_text}\n"
+        asr_prompt = asr_user_prompt_template.format(fuzzy_reference_text=fuzzy_reference_text)
         
         raw_transcript = self.asr_engine.recognize(asr_sys_prompt, asr_prompt, audio_path)
         
@@ -76,10 +85,9 @@ class AudioProcessingPipeline:
         # 步骤 2: 定位精准原文
         # ==========================================
         print(f"\n[2/3] 正在使用 {self.text_engine.model_name} 从模糊原文中定位精准原文...")
-        locator_user_prompt = (
-            f"【模糊原文范围】\n{fuzzy_reference_text}\n\n"
-            f"【语音逐字稿】\n{transcript_text}\n\n"
-            "请根据逐字稿的内容，从模糊原文中提取出讲法者实际讲到的精准原文范围。"
+        locator_user_prompt = locator_user_prompt_template.format(
+            fuzzy_reference_text=fuzzy_reference_text,
+            transcript_text=transcript_text
         )
         
         exact_reference_text = self.text_engine.generate(locator_sys_prompt, locator_user_prompt)
@@ -93,7 +101,10 @@ class AudioProcessingPipeline:
         # ==========================================
         print(f"\n[3/3] 正在使用 {self.text_engine.model_name} 将逐字稿整理为书面稿，请耐心等待...")
         # 这里使用刚刚提取出的精准原文作为参考
-        user_prompt = f"【原典参考】\n{exact_reference_text}\n\n【总逐字稿】\n{transcript_text}\n"
+        user_prompt = text_user_prompt_template.format(
+            exact_reference_text=exact_reference_text,
+            transcript_text=transcript_text
+        )
 
         written_text = self.text_engine.generate(text_sys_prompt, user_prompt)
 
@@ -180,6 +191,20 @@ if __name__ == "__main__":
         "只输出文稿内容，不说多余的话。"
     )
 
+    # ---------------- 用户提示词模板 ----------------
+    asr_user_prompt_template = "【原典参考】\n{fuzzy_reference_text}\n"
+
+    locator_user_prompt_template = (
+        "【模糊原文范围】\n{fuzzy_reference_text}\n\n"
+        "【语音逐字稿】\n{transcript_text}\n\n"
+        "请根据逐字稿的内容，从模糊原文中提取出讲法者实际讲到的精准原文范围。"
+    )
+
+    text_user_prompt_template = (
+        "【原典参考】\n{exact_reference_text}\n\n"
+        "【总逐字稿】\n{transcript_text}\n"
+    )
+
     # ---------------- 运行流水线 ----------------
     pipeline = AudioProcessingPipeline(
         asr_engine=asr_engine,
@@ -191,5 +216,8 @@ if __name__ == "__main__":
         fuzzy_text_path=fuzzy_text_path,
         asr_sys_prompt=asr_system_prompt,
         locator_sys_prompt=locator_system_prompt,
-        text_sys_prompt=text_system_prompt
+        text_sys_prompt=text_system_prompt,
+        asr_user_prompt_template=asr_user_prompt_template,
+        locator_user_prompt_template=locator_user_prompt_template,
+        text_user_prompt_template=text_user_prompt_template
     )
