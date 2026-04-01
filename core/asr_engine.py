@@ -16,7 +16,7 @@ import openai
 from openai import OpenAI
 import httpx
 
-from core.utils import AudioCompressor, OSSAudioUploader
+from core.utils import AudioCompressor, OSSAudioUploader, AudioChunker
 
 
 class BaseASR(ABC):
@@ -442,12 +442,27 @@ if __name__ == "__main__":
     output_dir = Path(audio_path).parent
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # 1. 将长音频切片 (每段 15 分钟)
+    print("\n" + "="*40)
+    print("正在将长音频切片以避免大模型输出截断...")
+    chunker = AudioChunker(chunk_minutes=15, overlap_seconds=0)
+    chunks_dir = str(output_dir / "temp_chunks")
+    chunk_files = chunker.process(audio_path, output_dir=chunks_dir)
+    print(f"音频已切分为 {len(chunk_files)} 个片段。")
+
+    # 2. 循环测试每个引擎
     for asr_engine in engines_to_test:
         engine_name = type(asr_engine).__name__
         print(f"\n{'='*40}")
         print(f"--- 开始测试引擎: {engine_name} ---")
         try:
-            full_transcription = asr_engine.recognize(system_prompt, prompt, audio_path)
+            full_transcription = ""
+            
+            # 逐个处理切片
+            for i, chunk_file in enumerate(chunk_files):
+                print(f"\n>>> 正在处理第 {i+1}/{len(chunk_files)} 个切片: {os.path.basename(chunk_file)}")
+                chunk_text = asr_engine.recognize(system_prompt, prompt, chunk_file)
+                full_transcription += chunk_text + "\n"
             
             # 进行后处理，剔除连续重复的幻觉行
             cleaned_transcription = clean_repeated_text(full_transcription)
