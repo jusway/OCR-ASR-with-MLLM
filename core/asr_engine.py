@@ -80,7 +80,7 @@ class GeminiASR(BaseASR):
             for attempt in range(max_retries):
                 try:
                     print(f"{Color.MAGENTA}[Gemini] 正在提交给模型处理 (尝试 {attempt + 1}/{max_retries})...{Color.RESET}")
-                    print(f"{Color.YELLOW}[Gemini] ⏳ 提示：长音频（如1小时）需要2-5分钟的深度理解时间，请耐心等待模型思考，不要关闭程序...{Color.RESET}")
+                    print(f"{Color.MAGENTA}[Gemini] ⏳ 提示：长音频（如1小时）需要2-5分钟的深度理解时间，请耐心等待模型思考，不要关闭程序...{Color.RESET}")
                     
                     start_wait_time = time.time()
                     response_stream = self.client.models.generate_content_stream(
@@ -96,7 +96,7 @@ class GeminiASR(BaseASR):
                         if first_chunk:
                             wait_duration = time.time() - start_wait_time
                             print(f"\n{Color.GREEN}[Gemini] 💡 模型思考完毕！耗时: {wait_duration:.1f} 秒。开始输出:{Color.RESET}")
-                            print(f"{Color.MAGENTA}[Gemini 输出]: {Color.RESET}", end="", flush=True)
+                            print(f"{Color.GREEN}[Gemini 输出]: {Color.RESET}", end="", flush=True)
                             first_chunk = False
                             
                         text = chunk.text
@@ -147,7 +147,7 @@ class MiMoASR(BaseASR):
         self.top_p = top_p
 
     def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
-        print(f"{Color.YELLOW}[MiMo] 正在处理音频文件: {audio_file_path}{Color.RESET}")
+        print(f"{Color.MAGENTA}[MiMo] 正在处理音频文件: {audio_file_path}{Color.RESET}")
 
         uploader = OSSAudioUploader()
         original_filename = os.path.basename(audio_file_path)
@@ -180,8 +180,8 @@ class MiMoASR(BaseASR):
                 }
             ]
 
-            print(f"{Color.YELLOW}[MiMo] 正在提交给模型处理...{Color.RESET}")
-            print(f"{Color.YELLOW}[MiMo] ⏳ 提示：长音频（如1小时）需要较长时间的深度理解，请耐心等待模型思考，不要关闭程序...{Color.RESET}")
+            print(f"{Color.MAGENTA}[MiMo] 正在提交给模型处理...{Color.RESET}")
+            print(f"{Color.MAGENTA}[MiMo] ⏳ 提示：长音频（如1小时）需要较长时间的深度理解，请耐心等待模型思考，不要关闭程序...{Color.RESET}")
 
             max_retries = 6
             for attempt in range(max_retries):
@@ -206,7 +206,7 @@ class MiMoASR(BaseASR):
                             if first_chunk:
                                 wait_duration = time.time() - start_wait_time
                                 print(f"\n{Color.GREEN}[MiMo] 💡 模型思考完毕！耗时: {wait_duration:.1f} 秒。开始输出:{Color.RESET}")
-                                print(f"{Color.YELLOW}[MiMo 输出]: {Color.RESET}", end="", flush=True)
+                                print(f"{Color.GREEN}[MiMo 输出]: {Color.RESET}", end="", flush=True)
                                 first_chunk = False
                                 
                             text_chunk = chunk.choices[0].delta.content
@@ -274,7 +274,7 @@ class QwenASR(BaseASR):
         self.api_url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 
     def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
-        print(f"{Color.BLUE}[Qwen] 正在处理音频文件: {audio_file_path}{Color.RESET}")
+        print(f"{Color.MAGENTA}[Qwen] 正在处理音频文件: {audio_file_path}{Color.RESET}")
 
         uploader = OSSAudioUploader()
         original_filename = os.path.basename(audio_file_path)
@@ -322,8 +322,8 @@ class QwenASR(BaseASR):
                 "X-DashScope-OssResourceResolve": "enable"  # 允许解析 OSS 等临时链接
             }
 
-            print(f"{Color.BLUE}[Qwen] 正在提交给模型处理...{Color.RESET}")
-            print(f"{Color.YELLOW}[Qwen] ⏳ 提示：长音频（如1小时）需要较长时间的深度理解，请耐心等待模型思考，不要关闭程序...{Color.RESET}")
+            print(f"{Color.MAGENTA}[Qwen] 正在提交给模型处理...{Color.RESET}")
+            print(f"{Color.MAGENTA}[Qwen] ⏳ 提示：长音频（如1小时）需要较长时间的深度理解，请耐心等待模型思考，不要关闭程序...{Color.RESET}")
 
             max_retries = 6
             for attempt in range(max_retries):
@@ -362,7 +362,7 @@ class QwenASR(BaseASR):
                                                         if first_chunk:
                                                             wait_duration = time.time() - start_wait_time
                                                             print(f"\n{Color.GREEN}[Qwen] 💡 模型思考完毕！耗时: {wait_duration:.1f} 秒。开始输出:{Color.RESET}")
-                                                            print(f"{Color.BLUE}[Qwen 输出]: {Color.RESET}", end="", flush=True)
+                                                            print(f"{Color.GREEN}[Qwen 输出]: {Color.RESET}", end="", flush=True)
                                                             first_chunk = False
                                                         print(item["text"], end="", flush=True)
                                                         full_text += item["text"]
@@ -370,7 +370,7 @@ class QwenASR(BaseASR):
                                                 if first_chunk:
                                                     wait_duration = time.time() - start_wait_time
                                                     print(f"\n{Color.GREEN}[Qwen] 💡 模型思考完毕！耗时: {wait_duration:.1f} 秒。开始输出:{Color.RESET}")
-                                                    print(f"{Color.BLUE}[Qwen 输出]: {Color.RESET}", end="", flush=True)
+                                                    print(f"{Color.GREEN}[Qwen 输出]: {Color.RESET}", end="", flush=True)
                                                     first_chunk = False
                                                 print(content, end="", flush=True)
                                                 full_text += content
