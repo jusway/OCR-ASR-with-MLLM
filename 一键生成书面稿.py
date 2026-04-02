@@ -3,7 +3,7 @@ from pathlib import Path
 from pydub import AudioSegment
 
 from core.asr_engine import Qwen3ASRFlashFiletrans
-from core.text_engine import GeminiText
+from core.text_engine import GeminiText, DoubaoText, MiMoText
 from core.utils import Color
 
 
@@ -151,8 +151,21 @@ if __name__ == "__main__":
     print(f"{Color.DARK_PURPLE}正在初始化 Qwen3ASRFlashFiletrans 引擎...")
     asr_engine = Qwen3ASRFlashFiletrans(model_name="qwen3-asr-flash-filetrans")
     
-    print(f"{Color.DARK_PURPLE}正在初始化 GeminiText 引擎...")
-    text_engine = GeminiText(model_name="gemini-3.1-pro-preview", temperature=0.3)
+    print(f"\n{Color.DARK_PURPLE}请选择要使用的文本引擎：")
+    print("1. GeminiText (默认)")
+    print("2. DoubaoText")
+    print("3. MiMoText")
+    engine_choice = input("请输入选项数字 [直接回车默认1]: ").strip()
+
+    if engine_choice == "2":
+        print(f"{Color.DARK_PURPLE}正在初始化 DoubaoText 引擎...")
+        text_engine = DoubaoText(temperature=0.3)
+    elif engine_choice == "3":
+        print(f"{Color.DARK_PURPLE}正在初始化 MiMoText 引擎...")
+        text_engine = MiMoText(temperature=0.3)
+    else:
+        print(f"{Color.DARK_PURPLE}正在初始化 GeminiText 引擎...")
+        text_engine = GeminiText(model_name="gemini-3.1-pro-preview", temperature=0.3)
 
     # ---------------- 系统提示词 ----------------
     text_system_prompt = (

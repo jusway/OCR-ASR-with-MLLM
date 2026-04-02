@@ -71,10 +71,9 @@ class GeminiText(BaseTextModel):
 # ==========================================
 class DoubaoText(BaseTextModel):
     """
-    [DEPRECATED] 使用火山引擎 (豆包) 模型进行文本处理。指令遵守能力较弱。
+    使用火山引擎 (豆包) 模型进行文本处理。
     """
-    def __init__(self, model_name: str = "doubao-seed-2-0-pro-260215", temperature: float = 0.5, top_p: float = 0.95):
-        warnings.warn("DoubaoText 引擎指令遵守能力较弱，已被标记为过时 (Deprecated)。", DeprecationWarning, stacklevel=2)
+    def __init__(self, model_name: str = "doubao-seed-2-0-pro-260215", temperature: float = 0.3, top_p: float = 0.95):
         super().__init__(model_name, temperature, top_p)
         self.api_key = os.getenv("ARK_API_KEY")
         if not self.api_key:
@@ -118,11 +117,10 @@ class DoubaoText(BaseTextModel):
 # ==========================================
 class MiMoText(BaseTextModel):
     """
-    [DEPRECATED] mimo-v2-pro 其实指令遵守有点差，我叫他使用『』符号他也没用啊
+    使用 MiMo 模型进行文本处理。
     """
-    def __init__(self, model_name: str = "mimo-v2-pro", temperature: float = 0.5, top_p: float = 0.95,
+    def __init__(self, model_name: str = "mimo-v2-pro", temperature: float = 0.3, top_p: float = 0.95,
                  api_key: str = None):
-        warnings.warn("MiMoText 引擎指令遵守能力较差，已被标记为过时 (Deprecated)。", DeprecationWarning, stacklevel=2)
         super().__init__(model_name, temperature, top_p)
         self.api_key = api_key or os.getenv("MIMO_API_KEY")
         self.base_url = "https://api.xiaomimimo.com/v1/chat/completions"
