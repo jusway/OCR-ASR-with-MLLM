@@ -68,6 +68,9 @@ class GeminiText(BaseTextModel):
 # MiMo 实现类 (OpenAI 兼容接口)
 # ==========================================
 class MiMoText(BaseTextModel):
+    """
+    mimo-v2-pro 其实指令遵守有点差，我叫他使用『』符号他也没用啊
+    """
     def __init__(self, model_name: str = "mimo-v2-pro", temperature: float = 0.5, top_p: float = 0.95,
                  api_key: str = None):
         super().__init__(model_name, temperature, top_p)
