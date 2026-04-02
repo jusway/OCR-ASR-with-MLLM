@@ -5,6 +5,9 @@ import uuid
 from abc import ABC, abstractmethod
 import httpx
 
+import dashscope
+from dashscope.audio.qwen_asr import QwenTranscription
+
 from core.utils import AudioCompressor, OSSAudioUploader, Color
 
 
@@ -30,7 +33,7 @@ class BaseASR(ABC):
 
 class Qwen3ASRFlashFiletrans(BaseASR):
     """
-    使用 Qwen3-ASR-Flash-Filetrans 模型进行异步语音识别。
+    使用 Qwen3-ASR-Flash-Filetrans 模型进行异步语音识别 (基于 DashScope SDK)。
     """
 
     def __init__(self, model_name: str = "qwen3-asr-flash-filetrans"):
@@ -39,8 +42,7 @@ class Qwen3ASRFlashFiletrans(BaseASR):
             raise ValueError("未检测到 DASHSCOPE_API_KEY 环境变量，请先设置阿里云 API Key。")
 
         self.model_name = model_name
-        self.api_url_submit = "https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription"
-        self.api_url_query_base = "https://dashscope.aliyuncs.com/api/v1/tasks/"
+        dashscope.api_key = self.api_key
 
     def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
         print(f"{Color.DARK_PURPLE}[Qwen3ASRFlash] 正在处理音频文件: {audio_file_path}")
@@ -58,101 +60,73 @@ class Qwen3ASRFlashFiletrans(BaseASR):
             processed_audio_path, is_temp = self._compress_audio(audio_file_path)
             signed_url, object_key = uploader.upload(processed_audio_path, filename=target_filename)
 
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-                "X-DashScope-Async": "enable"
-            }
-
-            payload = {
-                "model": self.model_name,
-                "input": {
-                    "file_url": signed_url
-                },
-                "parameters": {
-                    "channel_id": [0],
-                    "enable_itn": False
-                }
-            }
-
             print(f"{Color.DARK_PURPLE}[Qwen3ASRFlash] 正在提交异步转录任务...")
             
-            with httpx.Client(timeout=30.0) as client:
-                submit_resp = client.post(self.api_url_submit, headers=headers, json=payload)
+            # 使用 SDK 提交异步任务
+            task_response = QwenTranscription.async_call(
+                model=self.model_name,
+                file_url=signed_url,
+                enable_itn=False
+            )
+            
+            if task_response.status_code != 200:
+                raise RuntimeError(f"提交任务失败! HTTP code: {task_response.status_code}, Response: {task_response}")
+
+            task_id = task_response.output.task_id
+            print(f"{Color.DARK_PURPLE}[Qwen3ASRFlash] 任务已提交，task_id: {task_id}。正在等待任务完成...")
+
+            # 使用 SDK 的 wait 方法自动轮询等待结果
+            task_result = QwenTranscription.wait(task=task_id)
+
+            if task_result.status_code != 200:
+                raise RuntimeError(f"查询任务状态失败! HTTP code: {task_result.status_code}, Response: {task_result}")
+
+            status = task_result.output.task_status
+            
+            if status.upper() == "SUCCEEDED":
+                print(f"{Color.GREEN}[Qwen3ASRFlash] 任务已完成！正在提取转录结果...")
                 
-                if submit_resp.status_code != 200:
-                    raise RuntimeError(f"提交任务失败! HTTP code: {submit_resp.status_code}, Response: {submit_resp.text}")
-
-                resp_data = submit_resp.json()
-                output = resp_data.get("output")
-                if not output or "task_id" not in output:
-                    raise RuntimeError(f"提交任务失败，未获取到 task_id: {resp_data}")
-
-                task_id = output["task_id"]
-                print(f"{Color.DARK_PURPLE}[Qwen3ASRFlash] 任务已提交，task_id: {task_id}。正在轮询任务状态...")
-
-                finished = False
-                while not finished:
-                    time.sleep(3)
-                    query_url = self.api_url_query_base + task_id
-                    query_resp = client.get(query_url, headers=headers)
-
-                    if query_resp.status_code != 200:
-                        print(f"{Color.RED}[Qwen3ASRFlash] 查询任务状态失败! HTTP code: {query_resp.status_code}")
-                        continue
-
-                    query_data = query_resp.json()
-                    output = query_data.get("output")
-                    if output and "task_status" in output:
-                        status = output["task_status"]
-                        
-                        if status.upper() == "SUCCEEDED":
-                            finished = True
-                            print(f"{Color.GREEN}[Qwen3ASRFlash] 任务已完成！正在提取转录结果...")
+                results = task_result.output.get("results", [])
+                if not results:
+                    print(f"{Color.RED}[Qwen3ASRFlash] 警告：未找到 results 字段。原始 output: {task_result.output}")
+                    return ""
+                    
+                transcription_url = results[0].get("transcription_url")
+                if transcription_url:
+                    # 下载结果 JSON
+                    with httpx.Client(timeout=30.0) as client:
+                        res_resp = client.get(transcription_url)
+                        if res_resp.status_code == 200:
+                            res_data = res_resp.json()
                             
-                            results = output.get("results", [])
-                            if not results:
-                                print(f"{Color.RED}[Qwen3ASRFlash] 警告：未找到 results 字段。原始 output: {output}")
-                                return ""
+                            # 兼容多种 JSON 结构提取文本
+                            full_text = ""
+                            if "transcripts" in res_data:
+                                full_text = "".join([t.get("text", "") for t in res_data["transcripts"]])
+                            elif "text" in res_data:
+                                full_text = res_data["text"]
+                            elif isinstance(res_data, list):
+                                full_text = "".join([item.get("text", "") for item in res_data if isinstance(item, dict)])
                                 
-                            transcription_url = results[0].get("transcription_url")
-                            if transcription_url:
-                                # 下载结果 JSON
-                                res_resp = client.get(transcription_url)
-                                if res_resp.status_code == 200:
-                                    res_data = res_resp.json()
-                                    
-                                    # 兼容多种 JSON 结构提取文本
-                                    full_text = ""
-                                    if "transcripts" in res_data:
-                                        full_text = "".join([t.get("text", "") for t in res_data["transcripts"]])
-                                    elif "text" in res_data:
-                                        full_text = res_data["text"]
-                                    elif isinstance(res_data, list):
-                                        full_text = "".join([item.get("text", "") for item in res_data if isinstance(item, dict)])
-                                        
-                                    if not full_text:
-                                        print(f"{Color.RED}[Qwen3ASRFlash] 警告：未能提取到文本，原始结果：\n{json.dumps(res_data, ensure_ascii=False, indent=2)}")
-                                    else:
-                                        print(f"{Color.GREEN}[Qwen3ASRFlash 输出]:\n{full_text}")
-                                    return full_text
-                                else:
-                                    raise RuntimeError(f"获取转录结果文件失败: {res_resp.status_code}")
+                            if not full_text:
+                                print(f"{Color.RED}[Qwen3ASRFlash] 警告：未能提取到文本，原始结果：\n{json.dumps(res_data, ensure_ascii=False, indent=2)}")
                             else:
-                                # 如果直接返回了 text
-                                text = results[0].get("text", "")
-                                print(f"{Color.GREEN}[Qwen3ASRFlash 输出]:\n{text}")
-                                return text
-                                
-                        elif status.upper() == "FAILED":
-                            finished = True
-                            raise RuntimeError(f"任务执行失败: {query_data}")
-                        elif status.upper() == "UNKNOWN":
-                            finished = True
-                            raise RuntimeError(f"任务状态未知: {query_data}")
+                                print(f"{Color.GREEN}[Qwen3ASRFlash 输出]:\n{full_text}")
+                            return full_text
                         else:
-                            # RUNNING, PENDING 等状态，继续等待
-                            pass
+                            raise RuntimeError(f"获取转录结果文件失败: {res_resp.status_code}")
+                else:
+                    # 如果直接返回了 text
+                    text = results[0].get("text", "")
+                    print(f"{Color.GREEN}[Qwen3ASRFlash 输出]:\n{text}")
+                    return text
+                    
+            elif status.upper() == "FAILED":
+                raise RuntimeError(f"任务执行失败: {task_result}")
+            elif status.upper() == "UNKNOWN":
+                raise RuntimeError(f"任务状态未知: {task_result}")
+            else:
+                raise RuntimeError(f"任务状态异常: {task_result}")
 
         finally:
             # 清理可能生成的临时压缩文件
