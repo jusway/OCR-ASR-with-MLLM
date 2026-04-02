@@ -71,9 +71,10 @@ class GeminiText(BaseTextModel):
 # ==========================================
 class DoubaoText(BaseTextModel):
     """
-    使用火山引擎 (豆包) 模型进行文本处理。
+    [DEPRECATED] 使用火山引擎 (豆包) 模型进行文本处理。指令遵守能力较弱。
     """
     def __init__(self, model_name: str = "doubao-seed-2-0-pro-260215", temperature: float = 0.5, top_p: float = 0.95):
+        warnings.warn("DoubaoText 引擎指令遵守能力较弱，已被标记为过时 (Deprecated)。", DeprecationWarning, stacklevel=2)
         super().__init__(model_name, temperature, top_p)
         self.api_key = os.getenv("ARK_API_KEY")
         if not self.api_key:
