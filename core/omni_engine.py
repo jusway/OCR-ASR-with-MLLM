@@ -21,7 +21,7 @@ class GeminiOmni(BaseASR):
     使用 Google Gemini 模型进行 ASR。
     """
 
-    def __init__(self, model_name: str, temperature: float = 0.5, top_p: float = 0.95):
+    def __init__(self, model_name: str = "gemini-3.1-pro-preview", temperature: float = 0.5, top_p: float = 0.95):
         self.client = genai.Client(http_options={'timeout': None})
         self.model_name = model_name
         self.temperature = temperature
