@@ -257,6 +257,114 @@ class MiMoASR(BaseASR):
                 os.remove(processed_audio_path)
 
 
+class Qwen3OmniFlashASR(BaseASR):
+    """
+    使用 Qwen3-Omni-Flash-2025-12-01 模型进行 ASR (基于 OpenAI 兼容接口)。
+    """
+
+    def __init__(self, model_name: str = "qwen3-omni-flash-2025-12-01", temperature: float = 0.5, top_p: float = 0.95):
+        self.api_key = os.environ.get("DASHSCOPE_API_KEY")
+        if not self.api_key:
+            raise ValueError("未检测到 DASHSCOPE_API_KEY 环境变量，请先设置阿里云 API Key。")
+
+        self.client = OpenAI(
+            api_key=self.api_key,
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+        )
+        self.model_name = model_name
+        self.temperature = temperature
+        self.top_p = top_p
+
+    def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
+        print(f"{Color.DARK_PURPLE}[Qwen3OmniFlash] 正在处理音频文件: {audio_file_path}")
+
+        uploader = OSSAudioUploader()
+        original_filename = os.path.basename(audio_file_path)
+        base_name, _ = os.path.splitext(original_filename)
+        target_filename = f"{base_name}_{uuid.uuid4().hex[:8]}.mp3"
+
+        is_temp = False
+        processed_audio_path = None
+
+        try:
+            # 强制进行压缩并上传新文件
+            processed_audio_path, is_temp = self._compress_audio(audio_file_path)
+            signed_url, object_key = uploader.upload(processed_audio_path, filename=target_filename)
+
+            # 构建 OpenAI 兼容格式的消息，使用 audio_url
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "audio_url",
+                            "audio_url": {
+                                "url": signed_url
+                            }
+                        }
+                    ]
+                }
+            ]
+
+            print(f"{Color.DARK_PURPLE}[Qwen3OmniFlash] 正在提交给模型处理...")
+            print(f"{Color.DARK_PURPLE}[Qwen3OmniFlash] ⏳ 提示：长音频需要较长时间的深度理解，请耐心等待模型思考，不要关闭程序...")
+
+            max_retries = 6
+            for attempt in range(max_retries):
+                try:
+                    start_wait_time = time.time()
+                    response_stream = self.client.chat.completions.create(
+                        model=self.model_name,
+                        messages=messages,
+                        temperature=self.temperature,
+                        top_p=self.top_p,
+                        modalities=["text"],  # ASR 只需要文本输出
+                        stream=True,
+                        stream_options={"include_usage": True}
+                    )
+
+                    full_text = ""
+                    first_chunk = True
+                    
+                    for chunk in response_stream:
+                        if chunk.choices and chunk.choices[0].delta.content:
+                            if first_chunk:
+                                wait_duration = time.time() - start_wait_time
+                                print(f"\n{Color.GREEN}[Qwen3OmniFlash] 💡 模型思考完毕！耗时: {wait_duration:.1f} 秒。开始输出:")
+                                print(f"{Color.GREEN}[Qwen3OmniFlash 输出]: ", end="", flush=True)
+                                first_chunk = False
+                                
+                            text_chunk = chunk.choices[0].delta.content
+                            print(text_chunk, end="", flush=True)
+                            full_text += text_chunk
+                    print() # 换行
+
+                    return full_text
+                
+                except openai.RateLimitError as e:
+                    if attempt < max_retries - 1:
+                        wait_time = (2 ** attempt) * 5
+                        print(f"\n{Color.RED}[Qwen3OmniFlash] 触发并发限制 (429 Too many requests)，等待 {wait_time} 秒后重试 (第 {attempt + 1}/{max_retries} 次)...")
+                        time.sleep(wait_time)
+                    else:
+                        print(f"\n{Color.RED}[Qwen3OmniFlash] 重试次数已达上限，放弃请求。")
+                        raise e
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        wait_time = (2 ** attempt) * 5
+                        print(f"\n{Color.RED}[Qwen3OmniFlash] 发生异常 ({type(e).__name__}: {e})，等待 {wait_time} 秒后重试...")
+                        time.sleep(wait_time)
+                    else:
+                        raise e
+
+        finally:
+            # 清理可能生成的临时压缩文件
+            if is_temp and processed_audio_path and os.path.exists(processed_audio_path):
+                os.remove(processed_audio_path)
+
+
 class QwenASR(BaseASR):
     """
     使用 Qwen 3.5 Omni 模型进行 ASR。
