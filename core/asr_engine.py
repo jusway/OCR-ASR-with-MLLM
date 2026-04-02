@@ -86,12 +86,13 @@ class Qwen3ASRFlashFiletrans(BaseASR):
             if status.upper() == "SUCCEEDED":
                 print(f"{Color.GREEN}[Qwen3ASRFlash] 任务已完成！正在提取转录结果...")
                 
-                results = task_result.output.get("results", [])
-                if not results:
-                    print(f"{Color.RED}[Qwen3ASRFlash] 警告：未找到 results 字段。原始 output: {task_result.output}")
+                # 修复：阿里云返回的是单数的 result 对象，而不是 results 数组
+                result_obj = task_result.output.get("result", {})
+                if not result_obj:
+                    print(f"{Color.RED}[Qwen3ASRFlash] 警告：未找到 result 字段。原始 output: {task_result.output}")
                     return ""
                     
-                transcription_url = results[0].get("transcription_url")
+                transcription_url = result_obj.get("transcription_url")
                 if transcription_url:
                     # 下载结果 JSON
                     with httpx.Client(timeout=30.0) as client:
@@ -117,7 +118,7 @@ class Qwen3ASRFlashFiletrans(BaseASR):
                             raise RuntimeError(f"获取转录结果文件失败: {res_resp.status_code}")
                 else:
                     # 如果直接返回了 text
-                    text = results[0].get("text", "")
+                    text = result_obj.get("text", "")
                     print(f"{Color.GREEN}[Qwen3ASRFlash 输出]:\n{text}")
                     return text
                     
