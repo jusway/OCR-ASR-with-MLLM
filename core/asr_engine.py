@@ -158,29 +158,3 @@ class Qwen3ASRFlashFiletrans(BaseASR):
             # 清理可能生成的临时压缩文件
             if is_temp and processed_audio_path and os.path.exists(processed_audio_path):
                 os.remove(processed_audio_path)
-
-
-def clean_repeated_text(text: str) -> str:
-    """
-    简单的后处理：移除连续重复的相同行（常见于ASR在静音处的幻觉）。
-    如果某一行与上一行完全相同，则跳过不输出。
-    """
-    lines = text.split('\n')
-    if not lines:
-        return text
-    
-    cleaned = []
-    for line in lines:
-        stripped_line = line.strip()
-        # 如果是空行，直接保留
-        if not stripped_line:
-            cleaned.append(line)
-            continue
-            
-        # 如果当前行和上一行非空内容完全一样，说明是复读机幻觉，跳过
-        if cleaned and stripped_line == cleaned[-1].strip():
-            continue
-            
-        cleaned.append(line)
-        
-    return '\n'.join(cleaned)

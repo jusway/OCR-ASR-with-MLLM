@@ -3,33 +3,8 @@ from pathlib import Path
 from pydub import AudioSegment
 
 from core.asr_engine import Qwen3ASRFlashFiletrans
-from core.omni_engine import MiMoOmni, Qwen3OmniFlash
 from core.text_to_text_engine import MiMoText, GeminiText
 from core.utils import Color
-
-
-def clean_repeated_text(text: str) -> str:
-    """
-    简单的后处理：移除连续重复的相同行（常见于ASR在静音处的幻觉）。
-    如果某一行与上一行完全相同，则跳过不输出。
-    """
-    lines = text.split('\n')
-    if not lines:
-        return text
-    
-    cleaned = []
-    for line in lines:
-        stripped_line = line.strip()
-        if not stripped_line:
-            cleaned.append(line)
-            continue
-            
-        if cleaned and stripped_line == cleaned[-1].strip():
-            continue
-            
-        cleaned.append(line)
-        
-    return '\n'.join(cleaned)
 
 
 class AudioProcessingPipeline:
@@ -79,10 +54,7 @@ class AudioProcessingPipeline:
         else:
             print(f"{Color.DARK_PURPLE}正在调用 ASR 引擎生成逐字稿...")
             asr_prompt = asr_user_prompt_template.format(fuzzy_reference_text=fuzzy_reference_text)
-            raw_transcript = self.asr_engine.recognize(asr_sys_prompt, asr_prompt, audio_path)
-            
-            # 过滤可能出现的复读机幻觉
-            transcript_text = clean_repeated_text(raw_transcript)
+            transcript_text = self.asr_engine.recognize(asr_sys_prompt, asr_prompt, audio_path)
 
             with open(transcript_filename, "w", encoding="utf-8") as f:
                 f.write(transcript_text)
@@ -179,16 +151,8 @@ if __name__ == "__main__":
     fuzzy_text_path = "摩诃止观-久仁法师/摩诃止观006/006原文模糊范围.txt"
 
     # ---------------- 初始化引擎 ----------------
-    asr_choice = input(f"{Color.DARK_PURPLE}请选择 ASR 引擎 (1: MiMo, 2: Qwen3-Omni-Flash, 3: Qwen3-ASR-Flash) [默认 1]: ").strip()
-    if asr_choice == "2":
-        print(f"{Color.DARK_PURPLE}正在初始化 Qwen3OmniFlash 引擎...")
-        asr_engine = Qwen3OmniFlash(model_name="qwen3-omni-flash-2025-12-01", temperature=0.5, top_p=0.95)
-    elif asr_choice == "3":
-        print(f"{Color.DARK_PURPLE}正在初始化 Qwen3ASRFlashFiletrans 引擎...")
-        asr_engine = Qwen3ASRFlashFiletrans(model_name="qwen3-asr-flash-filetrans")
-    else:
-        print(f"{Color.DARK_PURPLE}正在初始化 MiMoOmni 引擎...")
-        asr_engine = MiMoOmni(model_name="mimo-v2-omni", temperature=0.5, top_p=0.95)
+    print(f"{Color.DARK_PURPLE}正在初始化 Qwen3ASRFlashFiletrans 引擎...")
+    asr_engine = Qwen3ASRFlashFiletrans(model_name="qwen3-asr-flash-filetrans")
     
     engine_choice = input(f"{Color.DARK_PURPLE}请选择文本处理引擎 (1: Gemini, 2: MiMo) [默认 1]: ").strip()
     if engine_choice == "2":
