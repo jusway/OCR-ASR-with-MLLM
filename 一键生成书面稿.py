@@ -3,7 +3,7 @@ from pathlib import Path
 from pydub import AudioSegment
 
 from core.asr_engine import Qwen3ASRFlashFiletrans
-from core.text_engine import GeminiText, DoubaoText
+from core.text_engine import GeminiText
 from core.utils import Color
 
 
@@ -151,13 +151,8 @@ if __name__ == "__main__":
     print(f"{Color.DARK_PURPLE}正在初始化 Qwen3ASRFlashFiletrans 引擎...")
     asr_engine = Qwen3ASRFlashFiletrans(model_name="qwen3-asr-flash-filetrans")
     
-    engine_choice = input(f"{Color.DARK_PURPLE}请选择文本处理引擎 (1: Gemini, 2: Doubao) [默认 1]: ").strip()
-    if engine_choice == "2":
-        print(f"{Color.DARK_PURPLE}正在初始化 DoubaoText 引擎...")
-        text_engine = DoubaoText(model_name="doubao-seed-2-0-pro-260215", temperature=0.3)
-    else:
-        print(f"{Color.DARK_PURPLE}正在初始化 GeminiText 引擎...")
-        text_engine = GeminiText(model_name="gemini-3.1-pro-preview", temperature=0.3)
+    print(f"{Color.DARK_PURPLE}正在初始化 GeminiText 引擎...")
+    text_engine = GeminiText(model_name="gemini-3.1-pro-preview", temperature=0.3)
 
     # ---------------- 系统提示词 ----------------
     text_system_prompt = (
