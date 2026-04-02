@@ -18,7 +18,7 @@ from core.asr_engine import BaseASR
 
 class GeminiOmni(BaseASR):
     """
-    使用 Google Gemini 模型进行 ASR。
+    使用  Gemini 模型进行 ASR。
     """
 
     def __init__(self, model_name: str = "gemini-3.1-pro-preview", temperature: float = 0.5, top_p: float = 0.95):
@@ -372,7 +372,7 @@ class Qwen3OmniFlash(BaseASR):
                 os.remove(processed_audio_path)
 
 
-class QwenOmni(BaseASR):
+class Qwen3_5Omni(BaseASR):
     """
     使用 Qwen 3.5 Omni 模型进行 ASR。
     由于阿里云百炼的 OpenAI 兼容接口暂不支持 audio_url，这里改用原生多模态 API。
