@@ -24,10 +24,8 @@ class AudioProcessingPipeline:
     def run(self, 
             audio_path, 
             fuzzy_text_path, 
-            asr_sys_prompt, 
             locator_sys_prompt, 
             text_sys_prompt,
-            asr_user_prompt_template,
             locator_user_prompt_template,
             text_user_prompt_template):
         
@@ -53,8 +51,7 @@ class AudioProcessingPipeline:
                 transcript_text = f.read()
         else:
             print(f"{Color.DARK_PURPLE}正在调用 ASR 引擎生成逐字稿...")
-            asr_prompt = asr_user_prompt_template.format(fuzzy_reference_text=fuzzy_reference_text)
-            transcript_text = self.asr_engine.recognize(asr_sys_prompt, asr_prompt, audio_path)
+            transcript_text = self.asr_engine.recognize(audio_path)
 
             with open(transcript_filename, "w", encoding="utf-8") as f:
                 f.write(transcript_text)
@@ -163,21 +160,6 @@ if __name__ == "__main__":
         text_engine = GeminiText(model_name="gemini-3.1-pro-preview", temperature=0.3)
 
     # ---------------- 系统提示词 ----------------
-    asr_system_prompt = (
-        # 角色
-        "您是一位资深的佛法音频转录工作的出家比丘大师。"
-        # 任务
-        "将用户提供的音频准确转录为逐字稿。"
-        # 信息规范
-        "保留所有口语化表达等内容，对音频语音完全忠实，不遗漏任何的信息。"
-        "遇到音频长时间静音、无意义的背景音或听不清的地方，请用[静音][无意义音][模糊音]等标记来替代。"
-        # 输出规范
-        "严格按照用户提供的【原文参考】校对专有名词。"
-        "只输出转录内容。"
-    )
-    asr_user_prompt_template = "【原文参考】\n{fuzzy_reference_text}\n"
-
-
     text_system_prompt = (
         # 角色
         "您是一位精通佛学逐字录音稿整理的比丘师父。"
@@ -225,10 +207,8 @@ if __name__ == "__main__":
     pipeline.run(
         audio_path=audio_path,
         fuzzy_text_path=fuzzy_text_path,
-        asr_sys_prompt=asr_system_prompt,
         locator_sys_prompt=locator_system_prompt,
         text_sys_prompt=text_system_prompt,
-        asr_user_prompt_template=asr_user_prompt_template,
         locator_user_prompt_template=locator_user_prompt_template,
         text_user_prompt_template=text_user_prompt_template
     )

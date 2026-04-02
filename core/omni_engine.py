@@ -27,7 +27,7 @@ class GeminiOmni(BaseASR):
         self.temperature = temperature
         self.top_p = top_p
 
-    def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
+    def recognize(self, audio_file_path: str, system_prompt: str = "", prompt: str = "") -> str:
         print(f"{Color.DARK_PURPLE}[Gemini] 正在处理音频文件: {audio_file_path}")
         
         # 统一进行压缩，压缩后的临时文件自带纯英文路径，顺便解决了 httpx 的中文路径报错问题
@@ -122,7 +122,7 @@ class MiMoOmni(BaseASR):
         self.temperature = temperature
         self.top_p = top_p
 
-    def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
+    def recognize(self, audio_file_path: str, system_prompt: str = "", prompt: str = "") -> str:
         print(f"{Color.DARK_PURPLE}[MiMo] 正在处理音频文件: {audio_file_path}")
 
         uploader = OSSAudioUploader()
@@ -248,7 +248,7 @@ class Qwen3OmniFlash(BaseASR):
         self.top_p = top_p
         self.api_url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 
-    def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
+    def recognize(self, audio_file_path: str, system_prompt: str = "", prompt: str = "") -> str:
         print(f"{Color.DARK_PURPLE}[Qwen3OmniFlash] 正在处理音频文件: {audio_file_path}")
 
         uploader = OSSAudioUploader()
@@ -388,7 +388,7 @@ class Qwen3_5Omni(BaseASR):
         self.top_p = top_p
         self.api_url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 
-    def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
+    def recognize(self, audio_file_path: str, system_prompt: str = "", prompt: str = "") -> str:
         print(f"{Color.DARK_PURPLE}[Qwen] 正在处理音频文件: {audio_file_path}")
 
         uploader = OSSAudioUploader()

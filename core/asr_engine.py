@@ -24,9 +24,9 @@ class BaseASR(ABC):
         return AudioCompressor.compress(audio_file_path)
 
     @abstractmethod
-    def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
+    def recognize(self, audio_file_path: str) -> str:
         """
-        根据提供的系统提示词、用户提示词和音频文件路径，返回转录文本。
+        根据提供的音频文件路径，返回转录文本。
         """
         pass
 
@@ -44,7 +44,7 @@ class Qwen3ASRFlashFiletrans(BaseASR):
         self.model_name = model_name
         dashscope.api_key = self.api_key
 
-    def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
+    def recognize(self, audio_file_path: str) -> str:
         print(f"{Color.DARK_PURPLE}[Qwen3ASRFlash] 正在处理音频文件: {audio_file_path}")
 
         uploader = OSSAudioUploader()
