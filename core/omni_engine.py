@@ -16,7 +16,7 @@ from core.utils import OSSAudioUploader, Color
 from core.asr_engine import BaseASR
 
 
-class GeminiASR(BaseASR):
+class GeminiOmni(BaseASR):
     """
     使用 Google Gemini 模型进行 ASR。
     """
@@ -102,7 +102,7 @@ class GeminiASR(BaseASR):
                     pass
 
 
-class MiMoASR(BaseASR):
+class MiMoOmni(BaseASR):
     """
     使用 Xiaomi MiMo (如 mimo-v2-omni) 模型进行 ASR。
     """
@@ -233,7 +233,7 @@ class MiMoASR(BaseASR):
                 os.remove(processed_audio_path)
 
 
-class Qwen3OmniFlashASR(BaseASR):
+class Qwen3OmniFlash(BaseASR):
     """
     使用 Qwen3-Omni-Flash-2025-12-01 模型进行 ASR (基于阿里云原生多模态 API)。
     """
@@ -372,7 +372,7 @@ class Qwen3OmniFlashASR(BaseASR):
                 os.remove(processed_audio_path)
 
 
-class QwenASR(BaseASR):
+class QwenOmni(BaseASR):
     """
     使用 Qwen 3.5 Omni 模型进行 ASR。
     由于阿里云百炼的 OpenAI 兼容接口暂不支持 audio_url，这里改用原生多模态 API。
