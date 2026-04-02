@@ -144,8 +144,8 @@ class AudioProcessingPipeline:
 
 if __name__ == "__main__":
     # ---------------- 基础配置 ----------------
-    audio_path = "摩诃止观-久仁法师/摩诃止观016/摩诃止观016.mp3"
-    fuzzy_text_path = "摩诃止观-久仁法师/摩诃止观016/016原文模糊范围.txt"
+    audio_path = "摩诃止观-久仁法师/摩诃止观017/摩诃止观017.mp3"
+    fuzzy_text_path = "摩诃止观-久仁法师/摩诃止观017/017原文模糊范围.txt"
 
     # ---------------- 初始化引擎 ----------------
     print(f"{Color.DARK_PURPLE}正在初始化 Qwen3ASRFlashFiletrans 引擎...")
