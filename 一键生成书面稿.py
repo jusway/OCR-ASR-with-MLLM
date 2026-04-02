@@ -147,23 +147,12 @@ if __name__ == "__main__":
     audio_path = "摩诃止观-久仁法师/摩诃止观016/摩诃止观016.mp3"
     fuzzy_text_path = "摩诃止观-久仁法师/摩诃止观016/016原文模糊范围.txt"
 
-    # ---------------- 模型选择 ----------------
-    print(f"\n{Color.DARK_PURPLE}请选择要使用的 Gemini 模型版本：")
-    print("1. Gemini 3.1 Pro Preview (默认)")
-    print("2. Gemini 3.0 Pro")
-    model_choice = input("请输入选项数字 [直接回车默认选1]: ").strip()
-
-    if model_choice == "2":
-        selected_model = "gemini-3.0-pro"
-    else:
-        selected_model = "gemini-3.1-pro-preview"
-
     # ---------------- 初始化引擎 ----------------
     print(f"{Color.DARK_PURPLE}正在初始化 Qwen3ASRFlashFiletrans 引擎...")
     asr_engine = Qwen3ASRFlashFiletrans(model_name="qwen3-asr-flash-filetrans")
     
-    print(f"{Color.DARK_PURPLE}正在初始化 GeminiText 引擎 ({selected_model})...")
-    text_engine = GeminiText(model_name=selected_model, temperature=0.3)
+    print(f"{Color.DARK_PURPLE}正在初始化 GeminiText 引擎...")
+    text_engine = GeminiText(model_name="gemini-3.1-pro-preview", temperature=0.3)
 
     # ---------------- 系统提示词 ----------------
     text_system_prompt = (
