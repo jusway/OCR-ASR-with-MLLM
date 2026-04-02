@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
 from google import genai
@@ -69,10 +70,11 @@ class GeminiText(BaseTextModel):
 # ==========================================
 class MiMoText(BaseTextModel):
     """
-    mimo-v2-pro 其实指令遵守有点差，我叫他使用『』符号他也没用啊
+    [DEPRECATED] mimo-v2-pro 其实指令遵守有点差，我叫他使用『』符号他也没用啊
     """
     def __init__(self, model_name: str = "mimo-v2-pro", temperature: float = 0.5, top_p: float = 0.95,
                  api_key: str = None):
+        warnings.warn("MiMoText 引擎指令遵守能力较差，已被标记为过时 (Deprecated)。", DeprecationWarning, stacklevel=2)
         super().__init__(model_name, temperature, top_p)
         self.api_key = api_key or os.getenv("MIMO_API_KEY")
         self.base_url = "https://api.xiaomimimo.com/v1/chat/completions"
