@@ -2,11 +2,14 @@ import os
 import json
 import requests
 import warnings
+import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from google import genai
 from google.genai import types
+from google.genai import errors
 from openai import OpenAI
+from core.utils import Color
 
 
 # ==========================================
@@ -43,12 +46,24 @@ class GeminiText(BaseTextModel):
             temperature=self.temperature,
             top_p=self.top_p,
         )
-        response = self.client.models.generate_content(
-            model=self.model_name,
-            contents=prompt,
-            config=config
-        )
-        return response.text
+        
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=config
+                )
+                return response.text
+            except errors.APIError as e:
+                if attempt < max_retries - 1:
+                    print(f"{Color.RED}⚠️ Gemini API 调用失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                    print(f"{Color.RED}等待 3 秒后重试...{Color.RESET}")
+                    time.sleep(3)
+                else:
+                    print(f"{Color.RED}❌ Gemini API 调用失败，已达到最大重试次数 ({max_retries}次)。{Color.RESET}")
+                    raise
 
     def generate_stream(self, system_prompt: str, prompt: str):
         config = types.GenerateContentConfig(
@@ -56,14 +71,27 @@ class GeminiText(BaseTextModel):
             temperature=self.temperature,
             top_p=self.top_p,
         )
-        response = self.client.models.generate_content_stream(
-            model=self.model_name,
-            contents=prompt,
-            config=config
-        )
-        for chunk in response:
-            if chunk.text:
-                yield chunk.text
+        
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                response = self.client.models.generate_content_stream(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=config
+                )
+                for chunk in response:
+                    if chunk.text:
+                        yield chunk.text
+                break  # 如果成功流式输出完毕，跳出重试循环
+            except errors.APIError as e:
+                if attempt < max_retries - 1:
+                    print(f"\n{Color.RED}⚠️ Gemini API 流式调用失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                    print(f"{Color.RED}等待 3 秒后重试...{Color.RESET}")
+                    time.sleep(3)
+                else:
+                    print(f"\n{Color.RED}❌ Gemini API 流式调用失败，已达到最大重试次数 ({max_retries}次)。{Color.RESET}")
+                    raise
 
 
 # ==========================================
