@@ -259,7 +259,7 @@ class MiMoASR(BaseASR):
 
 class Qwen3OmniFlashASR(BaseASR):
     """
-    使用 Qwen3-Omni-Flash-2025-12-01 模型进行 ASR (基于 OpenAI 兼容接口)。
+    使用 Qwen3-Omni-Flash-2025-12-01 模型进行 ASR (基于阿里云原生多模态 API)。
     """
 
     def __init__(self, model_name: str = "qwen3-omni-flash-2025-12-01", temperature: float = 0.5, top_p: float = 0.95):
@@ -267,13 +267,10 @@ class Qwen3OmniFlashASR(BaseASR):
         if not self.api_key:
             raise ValueError("未检测到 DASHSCOPE_API_KEY 环境变量，请先设置阿里云 API Key。")
 
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
-        )
         self.model_name = model_name
         self.temperature = temperature
         self.top_p = top_p
+        self.api_url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 
     def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
         print(f"{Color.DARK_PURPLE}[Qwen3OmniFlash] 正在处理音频文件: {audio_file_path}")
@@ -291,22 +288,37 @@ class Qwen3OmniFlashASR(BaseASR):
             processed_audio_path, is_temp = self._compress_audio(audio_file_path)
             signed_url, object_key = uploader.upload(processed_audio_path, filename=target_filename)
 
-            # 构建 OpenAI 兼容格式的消息，使用 audio_url
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
+            # 构建阿里云百炼原生多模态 API 的请求体
+            payload = {
+                "model": self.model_name,
+                "input": {
+                    "messages": [
                         {
-                            "type": "audio_url",
-                            "audio_url": {
-                                "url": signed_url
-                            }
+                            "role": "system",
+                            "content": [{"text": system_prompt}]
+                        },
+                        {
+                            "role": "user",
+                            "content": [
+                                {"audio": signed_url},
+                                {"text": prompt}
+                            ]
                         }
                     ]
+                },
+                "parameters": {
+                    "temperature": self.temperature,
+                    "top_p": self.top_p,
+                    "incremental_output": True  # 开启增量流式输出
                 }
-            ]
+            }
+
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "X-DashScope-SSE": "enable",  # 开启 SSE 流式响应
+                "X-DashScope-OssResourceResolve": "enable"  # 允许解析 OSS 等临时链接
+            }
 
             print(f"{Color.DARK_PURPLE}[Qwen3OmniFlash] 正在提交给模型处理...")
             print(f"{Color.DARK_PURPLE}[Qwen3OmniFlash] ⏳ 提示：长音频需要较长时间的深度理解，请耐心等待模型思考，不要关闭程序...")
@@ -314,48 +326,67 @@ class Qwen3OmniFlashASR(BaseASR):
             max_retries = 6
             for attempt in range(max_retries):
                 try:
-                    start_wait_time = time.time()
-                    response_stream = self.client.chat.completions.create(
-                        model=self.model_name,
-                        messages=messages,
-                        temperature=self.temperature,
-                        top_p=self.top_p,
-                        modalities=["text"],  # ASR 只需要文本输出
-                        stream=True,
-                        stream_options={"include_usage": True}
-                    )
-
                     full_text = ""
                     first_chunk = True
+                    start_wait_time = time.time()
                     
-                    for chunk in response_stream:
-                        if chunk.choices and chunk.choices[0].delta.content:
-                            if first_chunk:
-                                wait_duration = time.time() - start_wait_time
-                                print(f"\n{Color.GREEN}[Qwen3OmniFlash] 💡 模型思考完毕！耗时: {wait_duration:.1f} 秒。开始输出:")
-                                print(f"{Color.GREEN}[Qwen3OmniFlash 输出]: ", end="", flush=True)
-                                first_chunk = False
-                                
-                            text_chunk = chunk.choices[0].delta.content
-                            print(text_chunk, end="", flush=True)
-                            full_text += text_chunk
-                    print() # 换行
+                    with httpx.Client(timeout=None) as client:
+                        with client.stream("POST", self.api_url, headers=headers, json=payload) as response:
+                            if response.status_code != 200:
+                                error_text = response.read().decode('utf-8')
+                                if "Throttling" in error_text or "TooManyRequests" in error_text:
+                                    raise Exception(f"RateLimit: {error_text}")
+                                elif "DataInspectionFailed" in error_text:
+                                    print(f"\n{Color.RED}[Qwen3OmniFlash] ⚠️ 警告: 该片段触发了 API 的安全审核策略，已被拦截。将跳过此片段。")
+                                    return "\n[⚠️ 此片段内容被 API 安全策略拦截，无法转录]\n"
+                                else:
+                                    if response.status_code == 403:
+                                        print(f"\n{Color.RED}[Qwen3OmniFlash] ⚠️ 403 AccessDenied: 请确保您已在阿里云百炼控制台开通并申请了该模型的使用权限。")
+                                    raise RuntimeError(f"DashScope API Error ({response.status_code}): {error_text}")
 
+                            for line in response.iter_lines():
+                                if line.startswith("data:"):
+                                    data_str = line[5:].strip()
+                                    if not data_str:
+                                        continue
+                                    try:
+                                        data = json.loads(data_str)
+                                        choices = data.get("output", {}).get("choices", [])
+                                        if choices:
+                                            content = choices[0].get("message", {}).get("content", [])
+                                            if isinstance(content, list):
+                                                for item in content:
+                                                    if "text" in item:
+                                                        if first_chunk:
+                                                            wait_duration = time.time() - start_wait_time
+                                                            print(f"\n{Color.GREEN}[Qwen3OmniFlash] 💡 模型思考完毕！耗时: {wait_duration:.1f} 秒。开始输出:")
+                                                            print(f"{Color.GREEN}[Qwen3OmniFlash 输出]: ", end="", flush=True)
+                                                            first_chunk = False
+                                                        print(item["text"], end="", flush=True)
+                                                        full_text += item["text"]
+                                            elif isinstance(content, str):
+                                                if first_chunk:
+                                                    wait_duration = time.time() - start_wait_time
+                                                    print(f"\n{Color.GREEN}[Qwen3OmniFlash] 💡 模型思考完毕！耗时: {wait_duration:.1f} 秒。开始输出:")
+                                                    print(f"{Color.GREEN}[Qwen3OmniFlash 输出]: ", end="", flush=True)
+                                                    first_chunk = False
+                                                print(content, end="", flush=True)
+                                                full_text += content
+                                    except json.JSONDecodeError:
+                                        pass
+                    print() # 换行
                     return full_text
                 
-                except openai.RateLimitError as e:
-                    if attempt < max_retries - 1:
-                        wait_time = (2 ** attempt) * 5
-                        print(f"\n{Color.RED}[Qwen3OmniFlash] 触发并发限制 (429 Too many requests)，等待 {wait_time} 秒后重试 (第 {attempt + 1}/{max_retries} 次)...")
-                        time.sleep(wait_time)
-                    else:
-                        print(f"\n{Color.RED}[Qwen3OmniFlash] 重试次数已达上限，放弃请求。")
-                        raise e
                 except Exception as e:
-                    if attempt < max_retries - 1:
-                        wait_time = (2 ** attempt) * 5
-                        print(f"\n{Color.RED}[Qwen3OmniFlash] 发生异常 ({type(e).__name__}: {e})，等待 {wait_time} 秒后重试...")
-                        time.sleep(wait_time)
+                    error_msg = str(e)
+                    if "RateLimit" in error_msg or isinstance(e, httpx.RequestError):
+                        if attempt < max_retries - 1:
+                            wait_time = (2 ** attempt) * 5
+                            print(f"\n{Color.RED}[Qwen3OmniFlash] 触发并发限制或网络异常，等待 {wait_time} 秒后重试 (第 {attempt + 1}/{max_retries} 次)...")
+                            time.sleep(wait_time)
+                        else:
+                            print(f"\n{Color.RED}[Qwen3OmniFlash] 重试次数已达上限，放弃请求。")
+                            raise e
                     else:
                         raise e
 
