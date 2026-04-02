@@ -396,6 +396,127 @@ class Qwen3OmniFlashASR(BaseASR):
                 os.remove(processed_audio_path)
 
 
+class Qwen3ASRFlashFiletrans(BaseASR):
+    """
+    使用 Qwen3-ASR-Flash-Filetrans 模型进行异步语音识别。
+    """
+
+    def __init__(self, model_name: str = "qwen3-asr-flash-filetrans"):
+        self.api_key = os.environ.get("DASHSCOPE_API_KEY")
+        if not self.api_key:
+            raise ValueError("未检测到 DASHSCOPE_API_KEY 环境变量，请先设置阿里云 API Key。")
+
+        self.model_name = model_name
+        self.api_url_submit = "https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription"
+        self.api_url_query_base = "https://dashscope.aliyuncs.com/api/v1/tasks/"
+
+    def recognize(self, system_prompt: str, prompt: str, audio_file_path: str) -> str:
+        print(f"{Color.DARK_PURPLE}[Qwen3ASRFlash] 正在处理音频文件: {audio_file_path}")
+
+        uploader = OSSAudioUploader()
+        original_filename = os.path.basename(audio_file_path)
+        base_name, _ = os.path.splitext(original_filename)
+        target_filename = f"{base_name}_{uuid.uuid4().hex[:8]}.mp3"
+
+        is_temp = False
+        processed_audio_path = None
+
+        try:
+            # 强制进行压缩并上传新文件
+            processed_audio_path, is_temp = self._compress_audio(audio_file_path)
+            signed_url, object_key = uploader.upload(processed_audio_path, filename=target_filename)
+
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "X-DashScope-Async": "enable"
+            }
+
+            payload = {
+                "model": self.model_name,
+                "input": {
+                    "file_url": signed_url
+                },
+                "parameters": {
+                    "channel_id": [0],
+                    "enable_itn": False
+                }
+            }
+
+            print(f"{Color.DARK_PURPLE}[Qwen3ASRFlash] 正在提交异步转录任务...")
+            
+            with httpx.Client(timeout=30.0) as client:
+                submit_resp = client.post(self.api_url_submit, headers=headers, json=payload)
+                
+                if submit_resp.status_code != 200:
+                    raise RuntimeError(f"提交任务失败! HTTP code: {submit_resp.status_code}, Response: {submit_resp.text}")
+
+                resp_data = submit_resp.json()
+                output = resp_data.get("output")
+                if not output or "task_id" not in output:
+                    raise RuntimeError(f"提交任务失败，未获取到 task_id: {resp_data}")
+
+                task_id = output["task_id"]
+                print(f"{Color.DARK_PURPLE}[Qwen3ASRFlash] 任务已提交，task_id: {task_id}。正在轮询任务状态...")
+
+                finished = False
+                while not finished:
+                    time.sleep(3)
+                    query_url = self.api_url_query_base + task_id
+                    query_resp = client.get(query_url, headers=headers)
+
+                    if query_resp.status_code != 200:
+                        print(f"{Color.RED}[Qwen3ASRFlash] 查询任务状态失败! HTTP code: {query_resp.status_code}")
+                        continue
+
+                    query_data = query_resp.json()
+                    output = query_data.get("output")
+                    if output and "task_status" in output:
+                        status = output["task_status"]
+                        
+                        if status.upper() == "SUCCEEDED":
+                            finished = True
+                            print(f"{Color.GREEN}[Qwen3ASRFlash] 任务已完成！正在提取转录结果...")
+                            
+                            results = output.get("results", [])
+                            if not results:
+                                return ""
+                                
+                            transcription_url = results[0].get("transcription_url")
+                            if transcription_url:
+                                # 下载结果 JSON
+                                res_resp = client.get(transcription_url)
+                                if res_resp.status_code == 200:
+                                    res_data = res_resp.json()
+                                    # 提取文本
+                                    transcripts = res_data.get("transcripts", [])
+                                    full_text = "".join([t.get("text", "") for t in transcripts])
+                                    print(f"{Color.GREEN}[Qwen3ASRFlash 输出]:\n{full_text}")
+                                    return full_text
+                                else:
+                                    raise RuntimeError(f"获取转录结果文件失败: {res_resp.status_code}")
+                            else:
+                                # 如果直接返回了 text
+                                text = results[0].get("text", "")
+                                print(f"{Color.GREEN}[Qwen3ASRFlash 输出]:\n{text}")
+                                return text
+                                
+                        elif status.upper() == "FAILED":
+                            finished = True
+                            raise RuntimeError(f"任务执行失败: {query_data}")
+                        elif status.upper() == "UNKNOWN":
+                            finished = True
+                            raise RuntimeError(f"任务状态未知: {query_data}")
+                        else:
+                            # RUNNING, PENDING 等状态，继续等待
+                            pass
+
+        finally:
+            # 清理可能生成的临时压缩文件
+            if is_temp and processed_audio_path and os.path.exists(processed_audio_path):
+                os.remove(processed_audio_path)
+
+
 class QwenASR(BaseASR):
     """
     使用 Qwen 3.5 Omni 模型进行 ASR。

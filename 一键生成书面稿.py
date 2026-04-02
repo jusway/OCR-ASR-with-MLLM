@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from pydub import AudioSegment
 
-from core.asr_engine import MiMoASR, Qwen3OmniFlashASR
+from core.asr_engine import MiMoASR, Qwen3OmniFlashASR, Qwen3ASRFlashFiletrans
 from core.text_to_text_engine import MiMoText, GeminiText
 from core.utils import Color
 
@@ -178,10 +178,13 @@ if __name__ == "__main__":
     fuzzy_text_path = "摩诃止观-久仁法师/摩诃止观006/006原文模糊范围.txt"
 
     # ---------------- 初始化引擎 ----------------
-    asr_choice = input(f"{Color.DARK_PURPLE}请选择 ASR 引擎 (1: MiMo, 2: Qwen3-Omni-Flash) [默认 1]: ").strip()
+    asr_choice = input(f"{Color.DARK_PURPLE}请选择 ASR 引擎 (1: MiMo, 2: Qwen3-Omni-Flash, 3: Qwen3-ASR-Flash) [默认 1]: ").strip()
     if asr_choice == "2":
         print(f"{Color.DARK_PURPLE}正在初始化 Qwen3OmniFlashASR 引擎...")
         asr_engine = Qwen3OmniFlashASR(model_name="qwen3-omni-flash-2025-12-01", temperature=0.5, top_p=0.95)
+    elif asr_choice == "3":
+        print(f"{Color.DARK_PURPLE}正在初始化 Qwen3ASRFlashFiletrans 引擎...")
+        asr_engine = Qwen3ASRFlashFiletrans(model_name="qwen3-asr-flash-filetrans")
     else:
         print(f"{Color.DARK_PURPLE}正在初始化 MiMoASR 引擎...")
         asr_engine = MiMoASR(model_name="mimo-v2-omni", temperature=0.5, top_p=0.95)
