@@ -4,6 +4,7 @@ import json
 import uuid
 from abc import ABC, abstractmethod
 import httpx
+import requests
 
 import dashscope
 from dashscope.audio.qwen_asr import QwenTranscription
@@ -128,6 +129,103 @@ class Qwen3ASRFlashFiletrans(BaseASR):
                 raise RuntimeError(f"任务状态未知: {task_result}")
             else:
                 raise RuntimeError(f"任务状态异常: {task_result}")
+
+        finally:
+            # 清理可能生成的临时压缩文件
+            if is_temp and processed_audio_path and os.path.exists(processed_audio_path):
+                os.remove(processed_audio_path)
+
+
+class DoubaoASR(BaseASR):
+    """
+    使用火山引擎 (豆包) 大模型录音文件识别标准版 API 进行语音识别。
+    """
+
+    def __init__(self, model_name: str = "bigmodel"):
+        self.api_key = os.environ.get("DOUBAO_API_KEY")
+        if not self.api_key:
+            raise ValueError("未检测到 DOUBAO_API_KEY 环境变量，请先设置火山引擎 API Key。")
+
+        self.model_name = model_name
+        # 默认使用豆包录音文件识别模型2.0的资源ID
+        self.resource_id = "volc.seedasr.auc"
+
+    def recognize(self, audio_file_path: str) -> str:
+        print(f"{Color.DARK_PURPLE}[DoubaoASR] 正在处理音频文件: {audio_file_path}")
+
+        uploader = OSSAudioUploader()
+        original_filename = os.path.basename(audio_file_path)
+        base_name, _ = os.path.splitext(original_filename)
+        target_filename = f"{base_name}_{uuid.uuid4().hex[:8]}.mp3"
+
+        is_temp = False
+        processed_audio_path = None
+
+        try:
+            # 强制进行压缩并上传新文件
+            processed_audio_path, is_temp = self._compress_audio(audio_file_path)
+            signed_url, object_key = uploader.upload(processed_audio_path, filename=target_filename)
+
+            print(f"{Color.DARK_PURPLE}[DoubaoASR] 正在提交异步转录任务...")
+            
+            submit_url = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit"
+            task_id = str(uuid.uuid4())
+
+            headers = {
+                "X-Api-Key": self.api_key,
+                "X-Api-Resource-Id": self.resource_id,
+                "X-Api-Request-Id": task_id,
+                "X-Api-Sequence": "-1",
+                "Content-Type": "application/json"
+            }
+
+            request_payload = {
+                "user": {
+                    "uid": "doubao_asr_user"
+                },
+                "audio": {
+                    "url": signed_url,
+                    "format": "mp3"
+                },
+                "request": {
+                    "model_name": self.model_name,
+                    "enable_itn": True,
+                    "enable_punc": True
+                }
+            }
+
+            response = requests.post(submit_url, data=json.dumps(request_payload), headers=headers)
+            
+            if response.headers.get("X-Api-Status-Code") != "20000000":
+                raise RuntimeError(f"提交任务失败! Headers: {response.headers}, Body: {response.text}")
+
+            x_tt_logid = response.headers.get("X-Tt-Logid", "")
+            print(f"{Color.DARK_PURPLE}[DoubaoASR] 任务已提交，task_id: {task_id}。正在等待任务完成...")
+
+            query_url = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/query"
+            query_headers = {
+                "X-Api-Key": self.api_key,
+                "X-Api-Resource-Id": self.resource_id,
+                "X-Api-Request-Id": task_id,
+                "X-Tt-Logid": x_tt_logid,
+                "Content-Type": "application/json"
+            }
+
+            # 轮询查询结果
+            while True:
+                query_response = requests.post(query_url, json={}, headers=query_headers)
+                code = query_response.headers.get("X-Api-Status-Code", "")
+                
+                if code == "20000000":  # 任务完成
+                    print(f"{Color.GREEN}[DoubaoASR] 任务已完成！正在提取转录结果...")
+                    res_data = query_response.json()
+                    text = res_data.get("result", {}).get("text", "")
+                    print(f"{Color.GREEN}[DoubaoASR 输出]:\n{text}")
+                    return text
+                elif code in ["20000001", "20000002"]:  # 处理中或排队中
+                    time.sleep(3)
+                else:
+                    raise RuntimeError(f"任务执行失败! Code: {code}, Headers: {query_response.headers}, Body: {query_response.text}")
 
         finally:
             # 清理可能生成的临时压缩文件
