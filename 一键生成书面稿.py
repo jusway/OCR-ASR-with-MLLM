@@ -2,7 +2,8 @@ import os
 from pathlib import Path
 from pydub import AudioSegment
 
-from core.asr_engine import MiMoASR, Qwen3OmniFlashASR, Qwen3ASRFlashFiletrans
+from core.asr_engine import Qwen3ASRFlashFiletrans
+from core.omni_engine import MiMoASR, Qwen3OmniFlashASR
 from core.text_to_text_engine import MiMoText, GeminiText
 from core.utils import Color
 
