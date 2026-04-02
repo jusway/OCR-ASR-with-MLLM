@@ -10,7 +10,7 @@ from core.utils import AudioCompressor, OSSAudioUploader, Color
 
 class BaseASR(ABC):
     """
-    ASR (语音识别) 抽象基类，规范统一的调用接口。
+    ASR (语音识别) 抽象基类，规范统一的调用接口。特点是声学对齐。
     """
 
     def _compress_audio(self, audio_file_path: str) -> tuple[str, bool]:
