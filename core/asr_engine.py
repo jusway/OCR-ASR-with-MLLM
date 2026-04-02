@@ -480,6 +480,7 @@ class Qwen3ASRFlashFiletrans(BaseASR):
                             
                             results = output.get("results", [])
                             if not results:
+                                print(f"{Color.RED}[Qwen3ASRFlash] 警告：未找到 results 字段。原始 output: {output}")
                                 return ""
                                 
                             transcription_url = results[0].get("transcription_url")
@@ -488,10 +489,20 @@ class Qwen3ASRFlashFiletrans(BaseASR):
                                 res_resp = client.get(transcription_url)
                                 if res_resp.status_code == 200:
                                     res_data = res_resp.json()
-                                    # 提取文本
-                                    transcripts = res_data.get("transcripts", [])
-                                    full_text = "".join([t.get("text", "") for t in transcripts])
-                                    print(f"{Color.GREEN}[Qwen3ASRFlash 输出]:\n{full_text}")
+                                    
+                                    # 兼容多种 JSON 结构提取文本
+                                    full_text = ""
+                                    if "transcripts" in res_data:
+                                        full_text = "".join([t.get("text", "") for t in res_data["transcripts"]])
+                                    elif "text" in res_data:
+                                        full_text = res_data["text"]
+                                    elif isinstance(res_data, list):
+                                        full_text = "".join([item.get("text", "") for item in res_data if isinstance(item, dict)])
+                                        
+                                    if not full_text:
+                                        print(f"{Color.RED}[Qwen3ASRFlash] 警告：未能提取到文本，原始结果：\n{json.dumps(res_data, ensure_ascii=False, indent=2)}")
+                                    else:
+                                        print(f"{Color.GREEN}[Qwen3ASRFlash 输出]:\n{full_text}")
                                     return full_text
                                 else:
                                     raise RuntimeError(f"获取转录结果文件失败: {res_resp.status_code}")
