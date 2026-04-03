@@ -3,4 +3,5 @@ Pillow
 google-genai
 pydub # 音频处理
 openai
-oss2
+oss2 # 公网文件链接
+dashscope # 阿里的

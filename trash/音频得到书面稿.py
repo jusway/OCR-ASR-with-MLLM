@@ -4,7 +4,7 @@ from pathlib import Path
 from pydub import AudioSegment
 
 from core.asr_engine import GeminiASR
-from core.text_to_text_engine import GeminiText
+from core.text_engine import GeminiText
 from core.utils import AudioChunker
 
 

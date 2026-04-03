@@ -3,7 +3,7 @@ from pathlib import Path
 from pydub import AudioSegment
 
 from core.batch_audio_transcriber import BatchAudioTranscriber
-from core.text_to_text_engine import GeminiText
+from core.text_engine import GeminiText
 
 
 class AudioProcessingPipeline:
