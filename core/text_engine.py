@@ -59,10 +59,10 @@ class GeminiText(BaseTextModel):
             except errors.APIError as e:
                 if attempt < max_retries - 1:
                     print(f"{Color.RED}⚠️ Gemini API 调用失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                    print(f"{Color.RED}等待 3 秒后重试...{Color.RESET}")
+                    print(f"{Color.RED}等待 3 秒后重试...\033[0m")
                     time.sleep(3)
                 else:
-                    print(f"{Color.RED}❌ Gemini API 调用失败，已达到最大重试次数 ({max_retries}次)。{Color.RESET}")
+                    print(f"{Color.RED}❌ Gemini API 调用失败，已达到最大重试次数 ({max_retries}次)。\033[0m")
                     raise
 
     def generate_stream(self, system_prompt: str, prompt: str):
@@ -87,10 +87,10 @@ class GeminiText(BaseTextModel):
             except errors.APIError as e:
                 if attempt < max_retries - 1:
                     print(f"\n{Color.RED}⚠️ Gemini API 流式调用失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                    print(f"{Color.RED}等待 3 秒后重试...{Color.RESET}")
+                    print(f"{Color.RED}等待 3 秒后重试...\033[0m")
                     time.sleep(3)
                 else:
-                    print(f"\n{Color.RED}❌ Gemini API 流式调用失败，已达到最大重试次数 ({max_retries}次)。{Color.RESET}")
+                    print(f"\n{Color.RED}❌ Gemini API 流式调用失败，已达到最大重试次数 ({max_retries}次)。\033[0m")
                     raise
 
 
