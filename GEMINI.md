@@ -47,17 +47,17 @@ The following environment variables are required depending on the engines used:
 ### Usage
 The primary entry points are:
 
-1. **一键生成书面稿.py**: Full pipeline (Transcription → Refinement → Loss Check → Metadata).
-2. **信息损失检查.py**: Standalone script to compare an existing `*_逐字稿.md` and `*_书面稿.md` for information loss.
+1. **一键生成校对稿.py**: Full pipeline (Transcription → Refinement → Loss Check → Metadata).
+2. **信息损失检查.py**: Standalone script to compare an existing `*_逐字稿.md` and `*_校对稿.md` for information loss.
 
-#### Full Pipeline Step-by-Step (Internal to 一键生成书面稿.py):
+#### Full Pipeline Step-by-Step (Internal to 一键生成校对稿.py):
 1. **Transcription**: Generate a raw verbatim transcript.
 2. **Refinement**: Convert the transcript into a readable written draft using a text engine.
 3. **Information Loss Check**: Compare the verbatim transcript with the refined draft to ensure no key information or teachings were missed.
 4. **Metadata Insertion**: Add headers (Title, Author, Year, etc.) to the final file.
 
 ```powershell
-python 一键生成书面稿.py
+python 一键生成校对稿.py
 python 信息损失检查.py
 ```
 

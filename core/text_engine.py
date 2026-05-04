@@ -38,7 +38,12 @@ class BaseTextModel(ABC):
 class GeminiText(BaseTextModel):
     def __init__(self, model_name: str = "gemini-3.1-pro-preview", temperature: float = 1.0, top_p: float = 0.95):
         super().__init__(model_name, temperature, top_p)
-        self.client = genai.Client(http_options={'timeout': None})
+        self.client = genai.Client(
+            http_options={
+                'timeout': None,
+                'client_args': {'proxy': None, 'trust_env': False}
+            }
+        )
 
     def generate(self, system_prompt: str, prompt: str) -> str:
         config = types.GenerateContentConfig(
@@ -234,6 +239,71 @@ class NvidiaText(BaseTextModel):
         }
         if self.enable_thinking:
             kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": True, "clear_thinking": False}}
+        return kwargs
+
+    def generate(self, system_prompt: str, prompt: str) -> str:
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        response = self.client.chat.completions.create(**self._get_kwargs(messages, stream=False))
+        message = response.choices[0].message
+        return message.content or ""
+
+    def generate_stream(self, system_prompt: str, prompt: str):
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        response = self.client.chat.completions.create(**self._get_kwargs(messages, stream=True))
+
+        for chunk in response:
+            if not getattr(chunk, "choices", None) or len(chunk.choices) == 0:
+                continue
+
+            delta = chunk.choices[0].delta
+            if not delta:
+                continue
+
+            if getattr(delta, "content", None) is not None:
+                yield delta.content
+
+
+# ==========================================
+# DeepSeek 官方 API 实现类
+# ==========================================
+class DeepSeekText(BaseTextModel):
+    """
+    使用 DeepSeek 官方 API 进行文本处理。
+    支持 reasoning_effort 参数控制思考深度。
+    """
+    def __init__(self, model_name: str = "deepseek-v4-pro", temperature: float = 1.0, top_p: float = 0.95,
+                 enable_thinking: bool = False, reasoning_effort: str = "high"):
+        super().__init__(model_name, temperature, top_p)
+        self.api_key = os.getenv("DEEPSEEK_API_KEY")
+        self.enable_thinking = enable_thinking
+        self.reasoning_effort = reasoning_effort
+        if not self.api_key:
+            raise ValueError("未找到 DEEPSEEK_API_KEY，请设置环境变量。")
+
+        self.client = OpenAI(
+            api_key=self.api_key,
+            base_url="https://api.deepseek.com"
+        )
+
+    def _get_kwargs(self, messages: list, stream: bool) -> dict:
+        kwargs = {
+            "model": self.model_name,
+            "messages": messages,
+            "temperature": self.temperature,
+            "top_p": self.top_p,
+            "stream": stream
+        }
+        if self.enable_thinking:
+            kwargs["reasoning_effort"] = self.reasoning_effort
+            kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
         return kwargs
 
     def generate(self, system_prompt: str, prompt: str) -> str:

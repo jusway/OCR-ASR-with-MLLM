@@ -11,9 +11,9 @@ This is a personal toolkit that converts long Buddhist-lecture audio recordings 
 ```powershell
 pip install -r requirements.txt   # also requires ffmpeg installed system-wide
 
-python 一键生成书面稿.py              # full pipeline: ASR → 书面稿 → loss check → metadata
+python 一键生成校对稿.py              # full pipeline: ASR → 校对稿 → loss check → metadata
 python 一键润色与检查.py              # text-only pipeline starting from an existing 逐字稿
-python 信息损失检查.py                 # standalone loss check on an existing 逐字稿/书面稿 pair
+python 信息损失检查.py                 # standalone loss check on an existing 逐字稿/校对稿 pair
 ```
 
 All three scripts are launched without CLI args — edit the hard-coded constants in their `if __name__ == "__main__"` block before running.
@@ -30,14 +30,14 @@ All ASR and text providers inherit from abstract bases:
 When adding a new ASR or text provider, subclass the appropriate base class — the pipelines depend only on the abstract interface.
 
 ### Pipeline scripts (top level)
-- `一键生成书面稿.py` — `AudioProcessingPipeline` runs 4 steps: transcript → 书面稿 → loss-check report → metadata header. Default engines: `Qwen3ASRFlashFiletrans` + `GeminiText`.
+- `一键生成校对稿.py` — `AudioProcessingPipeline` runs 4 steps: transcript → 校对稿 → loss-check report → metadata header. Default engines: `Qwen3ASRFlashFiletrans` + `GeminiText`.
 - `一键润色与检查.py` — `GeminiProcessingPipeline`, same shape but skips the ASR step (consumes an existing `*_逐字稿.md`).
-- `信息损失检查.py` — standalone verifier on an existing 逐字稿/书面稿 pair; uses Gemini only.
+- `信息损失检查.py` — standalone verifier on an existing 逐字稿/校对稿 pair; uses Gemini only.
 
 ### Output filename convention (load-bearing)
 Per audio file `<base>.mp3`, the pipelines write into the same parent directory:
 - `<base>_逐字稿.md` — verbatim transcript
-- `<base>_书面稿.md` — refined draft
+- `<base>_校对稿.md` — refined draft
 - `<base>_丢失信息检查.md` — verifier report
 
 **Caching is filename-based**: each pipeline step checks `Path.exists()` and skips the (expensive) API call if the file is already there. To force a re-run, delete the corresponding `.md` file. Do not rename these suffixes — `信息损失检查.py` and the metadata-insertion step both pattern-match on them.
@@ -47,7 +47,7 @@ Sample under `摩诃止观-久仁法师/摩诃止观NNN/`:
 - `摩诃止观NNN.mp3` — source audio
 - `NNN原文模糊范围.txt` — fuzzy reference text (the source scripture being lectured on); fed to the text engine as `【原文参考】` so it can correct proper nouns
 - `摩诃止观NNN_精准原文.txt` — optional exact-text reference
-- generated `_逐字稿.md` / `_书面稿.md` / `_丢失信息检查.md`
+- generated `_逐字稿.md` / `_校对稿.md` / `_丢失信息检查.md`
 
 The fuzzy reference path is required by both pipeline scripts.
 
