@@ -35,7 +35,7 @@ class AudioProcessingPipeline:
         parent_dir = audio_path_obj.parent
 
         transcript_filename = parent_dir / f"{base_name}_逐字稿.md"
-        final_output_filename = parent_dir / f"{base_name}_书面稿.md"
+        final_output_filename = parent_dir / f"{base_name}_校对稿.md"
         verification_filename = parent_dir / f"{base_name}_丢失信息检查.md"
 
         with open(fuzzy_text_path, "r", encoding="utf-8") as f:
@@ -55,14 +55,14 @@ class AudioProcessingPipeline:
                 f.write(transcript_text)
             print(f"{Color.GREEN}逐字稿已保存至: {transcript_filename}")
 
-        # 步骤 2: 整理为书面稿 (带缓存)
-        print(f"\n{Color.DARK_PURPLE}[2/4] 开始处理书面稿...")
+        # 步骤 2: 整理为校对稿 (带缓存)
+        print(f"\n{Color.DARK_PURPLE}[2/4] 开始处理校对稿...")
         if final_output_filename.exists():
-            print(f"{Color.GREEN}✅ 检测到已存在书面稿，直接复用: {final_output_filename.name}")
+            print(f"{Color.GREEN}✅ 检测到已存在校对稿，直接复用: {final_output_filename.name}")
             with open(final_output_filename, "r", encoding="utf-8") as f:
                 written_text = f.read()
         else:
-            print(f"{Color.DARK_PURPLE}正在使用 {self.text_engine.model_name} 将逐字稿整理为书面稿，请耐心等待...")
+            print(f"{Color.DARK_PURPLE}正在使用 {self.text_engine.model_name} 将逐字稿整理为校对稿，请耐心等待...")
             user_prompt = text_user_prompt_template.format(
                 fuzzy_reference_text=fuzzy_reference_text,
                 transcript_text=transcript_text
@@ -72,7 +72,7 @@ class AudioProcessingPipeline:
 
             with open(final_output_filename, "w", encoding="utf-8") as f:
                 f.write(written_text)
-            print(f"{Color.GREEN}书面稿已保存至: {final_output_filename}")
+            print(f"{Color.GREEN}校对稿已保存至: {final_output_filename}")
 
         # 步骤 3: 信息丢失检查 (带缓存)
         print(f"\n{Color.DARK_PURPLE}[3/4] 开始检查信息丢失情况...")
@@ -80,14 +80,14 @@ class AudioProcessingPipeline:
         transcript_len = len(transcript_text)
         written_len = len(written_text)
         ratio = (written_len / transcript_len * 100) if transcript_len > 0 else 0.0
-        print(f"{Color.ORANGE}📊 字数统计：书面稿 {written_len} / 逐字稿 {transcript_len} = {ratio:.1f}%")
+        print(f"{Color.ORANGE}📊 字数统计：校对稿 {written_len} / 逐字稿 {transcript_len} = {ratio:.1f}%")
 
         if verification_filename.exists():
             print(f"{Color.GREEN}✅ 检测到已存在检查报告，直接复用: {verification_filename.name}")
             with open(verification_filename, "r", encoding="utf-8") as f:
                 verification_report = f.read()
         else:
-            print(f"{Color.DARK_PURPLE}正在对比逐字稿与书面稿，检查是否有关键信息丢失...")
+            print(f"{Color.DARK_PURPLE}正在对比逐字稿与校对稿，检查是否有关键信息丢失...")
             verifier_user_prompt = verifier_user_prompt_template.format(
                 transcript_text=transcript_text,
                 written_text=written_text
@@ -105,13 +105,13 @@ class AudioProcessingPipeline:
             print("...")
         print(f"{Color.ORANGE}----------------------------")
 
-        # 步骤 4: 补充元数据并插入书面稿
+        # 步骤 4: 补充元数据并插入校对稿
         print(f"\n{Color.DARK_PURPLE}[4/4] 准备补充元数据信息...")
         with open(final_output_filename, "r", encoding="utf-8") as f:
             current_written_text = f.read()
 
         if current_written_text.strip().startswith("> 标题："):
-            print(f"{Color.GREEN}✅ 检测到书面稿已包含元数据，跳过元数据。")
+            print(f"{Color.GREEN}✅ 检测到校对稿已包含元数据，跳过元数据。")
         else:
             duration = self._get_audio_duration(audio_path)
 
@@ -128,13 +128,13 @@ class AudioProcessingPipeline:
             final_content = metadata_header + current_written_text
             with open(final_output_filename, "w", encoding="utf-8") as f:
                 f.write(final_content)
-            print(f"{Color.GREEN}✅ 元数据已成功插入书面稿开头！")
+            print(f"{Color.GREEN}✅ 元数据已成功插入校对稿开头！")
 
         print(f"\n{Color.GREEN}===========================================")
         print("🎉 全部流程处理完成！")
         print(f"💡 最终文件列表：")
         print(f"  - 逐字稿: {transcript_filename.name}")
-        print(f"  - 书面稿: {final_output_filename.name}")
+        print(f"  - 校对稿: {final_output_filename.name}")
         print(f"  - 检查报告: {verification_filename.name}")
         print(f"===========================================\n")
 
