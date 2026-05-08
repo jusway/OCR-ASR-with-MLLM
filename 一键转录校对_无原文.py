@@ -1,4 +1,5 @@
 """纯音频 → 逐字稿 → 校对稿 → 信息丢失检查 → 补充元数据。"""
+import re
 from pathlib import Path
 
 from pydub import AudioSegment
@@ -11,8 +12,8 @@ from core.utils import Color
 # ================ 以下为全部配置，按需修改 ===================
 # ============================================================
 
-# 1) 目标文件夹（脚本自动找 .mp3）
-folder_path = Path(r"摩诃止观-定智法师 2017\01通讲001-016\2017年9月25日摩诃止观01通讲001")
+# 1) 目标文件夹（脚本自动扫描一级子文件夹内的 .mp3）
+folder_path = Path(r"摩诃止观-定智法师 2017\02序分001-018\2017年10月4日摩诃止观01序分001")
 
 # 2) 元数据（写入校对稿头部）
 year = "2017"
@@ -39,6 +40,7 @@ text_user_prompt_template = """
 ## 逐字稿信息
 这是一位师父在讲解摩诃止观。
 ## 校对规则：
+完全忠实逐字稿的语义。
 修正错别字：根据上下文和佛学常识纠正同音字和术语误识。
 补充标点并根据语义自然分段。
 删除口语填充词：去掉"嗯""啊""呃""哦""唉"等语气停顿词；去掉"这个这个""那个那个"等口头禅式反复；去掉句尾不承载语义的"啊""呀""呐""嘛"等拖音。
@@ -62,9 +64,14 @@ verifier_user_prompt_template = (
 # ================ 执行 ========================================
 # ============================================================
 if __name__ == "__main__":
-    audio_files = sorted(folder_path.glob("*.mp3")) + sorted(folder_path.glob("*.MP3"))
+    def _sort_key(p):
+        return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", str(p))]
+
+    audio_files = sorted(folder_path.glob("*/*.mp3"), key=_sort_key)
     if not audio_files:
-        print(f"{Color.RED}错误：在 {folder_path} 下没找到 .mp3 文件")
+        audio_files = sorted(folder_path.glob("*.mp3"), key=_sort_key)
+    if not audio_files:
+        print(f"{Color.RED}错误：在 {folder_path} 及其子文件夹下没找到 .mp3 文件")
         exit(1)
 
     engine_cls, engine_kwargs = AVAILABLE_MODELS[SELECTED_MODEL]
@@ -73,8 +80,8 @@ if __name__ == "__main__":
 
     for audio_path in audio_files:
         base_name = audio_path.stem
-        transcript_path = folder_path / f"{base_name}_逐字稿.md"
-        proofread_path = folder_path / f"{base_name}_校对稿.md"
+        transcript_path = audio_path.parent / f"{base_name}_逐字稿.md"
+        proofread_path = audio_path.parent / f"{base_name}_校对稿.md"
 
         # 步骤 1: 转录
         if transcript_path.exists():
@@ -98,8 +105,8 @@ if __name__ == "__main__":
             print(f"{Color.GREEN}[{base_name}] 校对稿已保存")
 
         # 步骤 3: 信息丢失检查
-        verification_path = folder_path / f"{base_name}_丢失信息检查.md"
-        if verification_path.exists():
+        cached = list(audio_path.parent.glob(f"{base_name}_丢失信息检查_*.md"))
+        if cached:
             print(f"{Color.GREEN}[{base_name}] 检查报告已存在，跳过")
         else:
             print(f"{Color.DARK_PURPLE}[{base_name}] 正在检查信息丢失...")
@@ -108,8 +115,11 @@ if __name__ == "__main__":
                 written_text=proofread_text
             )
             report = text_engine.generate(verifier_system_prompt, verifier_prompt)
+            has_loss = "无遗漏信息" not in report
+            tag = "有遗漏" if has_loss else "无遗漏"
+            verification_path = audio_path.parent / f"{base_name}_丢失信息检查_{tag}.md"
             verification_path.write_text(report, "utf-8")
-            print(f"{Color.GREEN}[{base_name}] 检查报告已保存")
+            print(f"{Color.GREEN}[{base_name}] 检查报告已保存（{tag}）")
 
         # 步骤 4: 补充元数据
         if not proofread_text.strip().startswith("> 标题："):
