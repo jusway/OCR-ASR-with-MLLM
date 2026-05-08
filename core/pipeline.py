@@ -6,7 +6,7 @@ from core.utils import Color
 
 
 class AudioProcessingPipeline:
-    """端到端音频处理流水线：整段转录 -> 书面化 -> 信息丢失检查 -> 补充元数据"""
+    """端到端音频处理流水线：转录 → 校对 → 精准定位 → 信息丢失检查 → 元数据"""
 
     def __init__(self, asr_engine, text_engine):
         self.asr_engine = asr_engine
@@ -21,11 +21,13 @@ class AudioProcessingPipeline:
 
     def run(self,
             audio_path,
-            fuzzy_text_path,
-            text_sys_prompt,
-            text_user_prompt_template,
-            verifier_sys_prompt,
-            verifier_user_prompt_template,
+            fuzzy_reference_text="",
+            text_sys_prompt="",
+            text_user_prompt_template="",
+            verifier_sys_prompt="",
+            verifier_user_prompt_template="",
+            precision_sys_prompt="",
+            precision_user_prompt_template="",
             year="",
             author="",
             reference_text=""):
@@ -36,13 +38,16 @@ class AudioProcessingPipeline:
 
         transcript_filename = parent_dir / f"{base_name}_逐字稿.md"
         final_output_filename = parent_dir / f"{base_name}_校对稿.md"
+        fuzzy_filename = parent_dir / "模糊原文.md"
         verification_filename = parent_dir / f"{base_name}_丢失信息检查.md"
 
-        with open(fuzzy_text_path, "r", encoding="utf-8") as f:
-            fuzzy_reference_text = f.read()
+        # 保存模糊原文为文件
+        if fuzzy_reference_text and not fuzzy_filename.exists():
+            with open(fuzzy_filename, "w", encoding="utf-8") as f:
+                f.write(fuzzy_reference_text)
 
         # 步骤 1: 整段音频直接转录 (带缓存)
-        print(f"\n{Color.DARK_PURPLE}[1/4] 开始处理整段音频转录...")
+        print(f"\n{Color.DARK_PURPLE}[1/5] 开始处理整段音频转录...")
         if transcript_filename.exists():
             print(f"{Color.GREEN}✅ 检测到已存在逐字稿，直接复用: {transcript_filename.name}")
             with open(transcript_filename, "r", encoding="utf-8") as f:
@@ -56,7 +61,7 @@ class AudioProcessingPipeline:
             print(f"{Color.GREEN}逐字稿已保存至: {transcript_filename}")
 
         # 步骤 2: 整理为校对稿 (带缓存)
-        print(f"\n{Color.DARK_PURPLE}[2/4] 开始处理校对稿...")
+        print(f"\n{Color.DARK_PURPLE}[2/5] 开始处理校对稿...")
         if final_output_filename.exists():
             print(f"{Color.GREEN}✅ 检测到已存在校对稿，直接复用: {final_output_filename.name}")
             with open(final_output_filename, "r", encoding="utf-8") as f:
@@ -74,8 +79,29 @@ class AudioProcessingPipeline:
                 f.write(written_text)
             print(f"{Color.GREEN}校对稿已保存至: {final_output_filename}")
 
-        # 步骤 3: 信息丢失检查 (带缓存)
-        print(f"\n{Color.DARK_PURPLE}[3/4] 开始检查信息丢失情况...")
+        # 步骤 3: 精准定位原文 (带缓存)
+        precision_filename = parent_dir / f"{base_name}_精准原文.md"
+        if precision_sys_prompt and precision_user_prompt_template:
+            print(f"\n{Color.DARK_PURPLE}[3/5] 开始精准定位原文...")
+            if precision_filename.exists():
+                print(f"{Color.GREEN}✅ 检测到已存在精准原文，直接复用: {precision_filename.name}")
+                with open(precision_filename, "r", encoding="utf-8") as f:
+                    precision_text = f.read()
+            else:
+                print(f"{Color.DARK_PURPLE}正在根据校对稿定位精准原文范围...")
+                precision_prompt = precision_user_prompt_template.format(
+                    written_text=written_text,
+                    fuzzy_reference_text=fuzzy_reference_text
+                )
+                precision_text = self.text_engine.generate(precision_sys_prompt, precision_prompt)
+                with open(precision_filename, "w", encoding="utf-8") as f:
+                    f.write(precision_text)
+                print(f"{Color.GREEN}精准原文已保存至: {precision_filename}")
+        else:
+            precision_text = ""
+
+        # 步骤 4: 信息丢失检查 (带缓存)
+        print(f"\n{Color.DARK_PURPLE}[4/5] 开始检查信息丢失情况...")
 
         transcript_len = len(transcript_text)
         written_len = len(written_text)
@@ -105,8 +131,8 @@ class AudioProcessingPipeline:
             print("...")
         print(f"{Color.ORANGE}----------------------------")
 
-        # 步骤 4: 补充元数据并插入校对稿
-        print(f"\n{Color.DARK_PURPLE}[4/4] 准备补充元数据信息...")
+        # 步骤 5: 补充元数据并插入校对稿
+        print(f"\n{Color.DARK_PURPLE}[5/5] 准备补充元数据信息...")
         with open(final_output_filename, "r", encoding="utf-8") as f:
             current_written_text = f.read()
 
@@ -115,14 +141,21 @@ class AudioProcessingPipeline:
         else:
             duration = self._get_audio_duration(audio_path)
 
+            print(f"\n{Color.ORANGE}--- 请根据精准原文，输入最终的原文元数据 ---")
+            if precision_text:
+                print(f"{Color.ORANGE}精准原文参考：\n{precision_text[:500]}...")
+            final_reference = input(f"{Color.DARK_PURPLE}请输入原文元数据（输完回车）：\n").strip()
+            if final_reference:
+                final_reference = f"> 原文：{final_reference}\n"
+            print(f"{Color.ORANGE}-------------------------------------------")
+
             metadata_header = (
                 f"> 标题：{base_name}\n"
                 f"> 时间：{year}\n"
                 f"> 时长：{duration}\n"
                 f"> 作者：{author}\n"
-                f"> 原文：{reference_text}\n"
-                "\n"
-                "---\n\n"
+                f"{final_reference}"
+                "\n---\n\n"
             )
 
             final_content = metadata_header + current_written_text
@@ -135,6 +168,8 @@ class AudioProcessingPipeline:
         print(f"💡 最终文件列表：")
         print(f"  - 逐字稿: {transcript_filename.name}")
         print(f"  - 校对稿: {final_output_filename.name}")
+        if precision_text:
+            print(f"  - 精准原文: {precision_filename.name}")
         print(f"  - 检查报告: {verification_filename.name}")
         print(f"===========================================\n")
 
@@ -142,7 +177,8 @@ class AudioProcessingPipeline:
 def run(*, folder_path, year, author, reference_text, asr_model_name,
         available_models, selected_model,
         text_system_prompt, text_user_prompt_template,
-        verifier_system_prompt, verifier_user_prompt_template):
+        verifier_system_prompt, verifier_user_prompt_template,
+        precision_system_prompt="", precision_user_prompt_template=""):
     """执行完整流水线：文件发现 → 引擎初始化 → 运行"""
 
     if not folder_path.exists():
@@ -157,19 +193,9 @@ def run(*, folder_path, year, author, reference_text, asr_model_name,
     audio_path_obj = next((f for f in audio_files if f.stem == folder_path.name), audio_files[0])
     audio_path = str(audio_path_obj)
 
-    # 自动寻找原文参考文件 (.txt)，优先包含"原文"关键字
-    txt_files = list(folder_path.glob("*原文*.txt"))
-    if not txt_files:
-        txt_files = list(folder_path.glob("*.txt"))
-    if not txt_files:
-        print(f"{Color.RED}错误：在 {folder_path} 下没找到参考原文 (.txt) 文件")
-        exit(1)
-    fuzzy_text_path = str(txt_files[0])
-
     print(f"{Color.GREEN}已自动识别任务：")
     print(f"  - 文件夹: {folder_path}")
     print(f"  - 音频文件: {audio_path_obj.name}")
-    print(f"  - 参考原文: {Path(fuzzy_text_path).name}")
 
     # 初始化引擎
     engine_cls, engine_kwargs = available_models[selected_model]
@@ -188,11 +214,13 @@ def run(*, folder_path, year, author, reference_text, asr_model_name,
 
     pipeline.run(
         audio_path=audio_path,
-        fuzzy_text_path=fuzzy_text_path,
+        fuzzy_reference_text=reference_text,
         text_sys_prompt=text_system_prompt,
         text_user_prompt_template=text_user_prompt_template,
         verifier_sys_prompt=verifier_system_prompt,
         verifier_user_prompt_template=verifier_user_prompt_template,
+        precision_sys_prompt=precision_system_prompt,
+        precision_user_prompt_template=precision_user_prompt_template,
         year=year,
         author=author,
         reference_text=reference_text

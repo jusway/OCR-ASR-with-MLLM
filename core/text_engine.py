@@ -241,34 +241,42 @@ class NvidiaText(BaseTextModel):
             kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": True, "clear_thinking": False}}
         return kwargs
 
-    def generate(self, system_prompt: str, prompt: str) -> str:
+    def _build_messages(self, system_prompt: str, prompt: str) -> list:
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
+        return messages
 
-        response = self.client.chat.completions.create(**self._get_kwargs(messages, stream=False))
-        message = response.choices[0].message
-        return message.content or ""
+    def generate(self, system_prompt: str, prompt: str) -> str:
+        messages = self._build_messages(system_prompt, prompt)
+        for attempt in range(5):
+            try:
+                response = self.client.chat.completions.create(**self._get_kwargs(messages, stream=False))
+                if response and response.choices:
+                    return response.choices[0].message.content or ""
+            except Exception as e:
+                if attempt < 4:
+                    print(f"{Color.RED}⚠️ {self.model_name} 调用失败 (尝试 {attempt+1}/5): {e}")
+                    time.sleep(3)
+                else:
+                    raise
 
     def generate_stream(self, system_prompt: str, prompt: str):
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
-
-        response = self.client.chat.completions.create(**self._get_kwargs(messages, stream=True))
-
-        for chunk in response:
-            if not getattr(chunk, "choices", None) or len(chunk.choices) == 0:
-                continue
-
-            delta = chunk.choices[0].delta
-            if not delta:
-                continue
-
-            if getattr(delta, "content", None) is not None:
-                yield delta.content
+        messages = self._build_messages(system_prompt, prompt)
+        for attempt in range(5):
+            try:
+                response = self.client.chat.completions.create(**self._get_kwargs(messages, stream=True))
+                for chunk in response:
+                    if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+                return
+            except Exception as e:
+                if attempt < 4:
+                    print(f"\n{Color.RED}⚠️ {self.model_name} 流式调用失败 (尝试 {attempt+1}/5): {e}")
+                    time.sleep(3)
+                else:
+                    raise
 
 
 # ==========================================
@@ -306,31 +314,39 @@ class DeepSeekText(BaseTextModel):
             kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
         return kwargs
 
-    def generate(self, system_prompt: str, prompt: str) -> str:
+    def _build_messages(self, system_prompt: str, prompt: str) -> list:
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
+        return messages
 
-        response = self.client.chat.completions.create(**self._get_kwargs(messages, stream=False))
-        message = response.choices[0].message
-        return message.content or ""
+    def generate(self, system_prompt: str, prompt: str) -> str:
+        messages = self._build_messages(system_prompt, prompt)
+        for attempt in range(5):
+            try:
+                response = self.client.chat.completions.create(**self._get_kwargs(messages, stream=False))
+                if response and response.choices:
+                    return response.choices[0].message.content or ""
+            except Exception as e:
+                if attempt < 4:
+                    print(f"{Color.RED}⚠️ {self.model_name} 调用失败 (尝试 {attempt+1}/5): {e}")
+                    time.sleep(3)
+                else:
+                    raise
 
     def generate_stream(self, system_prompt: str, prompt: str):
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
-
-        response = self.client.chat.completions.create(**self._get_kwargs(messages, stream=True))
-
-        for chunk in response:
-            if not getattr(chunk, "choices", None) or len(chunk.choices) == 0:
-                continue
-
-            delta = chunk.choices[0].delta
-            if not delta:
-                continue
-
-            if getattr(delta, "content", None) is not None:
-                yield delta.content
+        messages = self._build_messages(system_prompt, prompt)
+        for attempt in range(5):
+            try:
+                response = self.client.chat.completions.create(**self._get_kwargs(messages, stream=True))
+                for chunk in response:
+                    if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+                return
+            except Exception as e:
+                if attempt < 4:
+                    print(f"\n{Color.RED}⚠️ {self.model_name} 流式调用失败 (尝试 {attempt+1}/5): {e}")
+                    time.sleep(3)
+                else:
+                    raise
