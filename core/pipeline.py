@@ -39,10 +39,9 @@ class AudioProcessingPipeline:
         transcript_filename = parent_dir / f"{base_name}_逐字稿.md"
         final_output_filename = parent_dir / f"{base_name}_校对稿.md"
         fuzzy_filename = parent_dir / "模糊原文.md"
-        verification_filename = parent_dir / f"{base_name}_丢失信息检查.md"
 
-        # 保存模糊原文为文件
-        if fuzzy_reference_text and not fuzzy_filename.exists():
+        # 保存模糊原文为文件（始终以代码中的为准）
+        if fuzzy_reference_text:
             with open(fuzzy_filename, "w", encoding="utf-8") as f:
                 f.write(fuzzy_reference_text)
 
@@ -108,22 +107,25 @@ class AudioProcessingPipeline:
         ratio = (written_len / transcript_len * 100) if transcript_len > 0 else 0.0
         print(f"{Color.ORANGE}📊 字数统计：校对稿 {written_len} / 逐字稿 {transcript_len} = {ratio:.1f}%")
 
-        if verification_filename.exists():
+        cached = list(parent_dir.glob(f"{base_name}_丢失信息检查_*.md"))
+        if cached:
+            verification_filename = cached[0]
             print(f"{Color.GREEN}✅ 检测到已存在检查报告，直接复用: {verification_filename.name}")
-            with open(verification_filename, "r", encoding="utf-8") as f:
-                verification_report = f.read()
+            verification_report = verification_filename.read_text("utf-8")
         else:
             print(f"{Color.DARK_PURPLE}正在对比逐字稿与校对稿，检查是否有关键信息丢失...")
             verifier_user_prompt = verifier_user_prompt_template.format(
                 transcript_text=transcript_text,
-                written_text=written_text
+                written_text=written_text,
+                precision_text=precision_text
             )
 
             verification_report = self.text_engine.generate(verifier_sys_prompt, verifier_user_prompt)
-
-            with open(verification_filename, "w", encoding="utf-8") as f:
-                f.write(verification_report)
-            print(f"{Color.GREEN}检查报告已保存至: {verification_filename}")
+            has_loss = "无遗漏信息" not in verification_report
+            tag = "有遗漏" if has_loss else "无遗漏"
+            verification_filename = parent_dir / f"{base_name}_丢失信息检查_{tag}.md"
+            verification_filename.write_text(verification_report, "utf-8")
+            print(f"{Color.GREEN}检查报告已保存至: {verification_filename}（{tag}）")
 
         print(f"{Color.ORANGE}--- 信息丢失检查报告摘要 ---")
         print("\n".join(verification_report.split("\n")[:10]))
