@@ -107,7 +107,7 @@ class AudioProcessingPipeline:
         ratio = (written_len / transcript_len * 100) if transcript_len > 0 else 0.0
         print(f"{Color.ORANGE}📊 字数统计：校对稿 {written_len} / 逐字稿 {transcript_len} = {ratio:.1f}%")
 
-        cached = list(parent_dir.glob(f"{base_name}_丢失信息检查_*.md"))
+        cached = list(parent_dir.glob(f"丢失信息检查_*.md"))
         if cached:
             verification_filename = cached[0]
             print(f"{Color.GREEN}✅ 检测到已存在检查报告，直接复用: {verification_filename.name}")
@@ -123,7 +123,7 @@ class AudioProcessingPipeline:
             verification_report = self.text_engine.generate(verifier_sys_prompt, verifier_user_prompt)
             has_loss = "无遗漏信息" not in verification_report
             tag = "有遗漏" if has_loss else "无遗漏"
-            verification_filename = parent_dir / f"{base_name}_丢失信息检查_{tag}.md"
+            verification_filename = parent_dir / f"丢失信息检查_{tag}.md"
             verification_filename.write_text(verification_report, "utf-8")
             print(f"{Color.GREEN}检查报告已保存至: {verification_filename}（{tag}）")
 
@@ -145,10 +145,9 @@ class AudioProcessingPipeline:
 
             print(f"\n{Color.ORANGE}--- 请根据精准原文，输入最终的原文元数据 ---")
             if precision_text:
-                print(f"{Color.ORANGE}精准原文参考：\n{precision_text[:500]}...")
+                print(f"{Color.ORANGE}精准原文参考（结尾部分）：\n...{precision_text[-500:]}")
             final_reference = input(f"{Color.DARK_PURPLE}请输入原文元数据（输完回车）：\n").strip()
-            if final_reference:
-                final_reference = f"> 原文：{final_reference}\n"
+            final_reference = f"> 原文：{final_reference}\n"
             print(f"{Color.ORANGE}-------------------------------------------")
 
             metadata_header = (
