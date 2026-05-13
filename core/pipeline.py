@@ -38,12 +38,21 @@ class AudioProcessingPipeline:
 
         transcript_filename = parent_dir / f"{base_name}_逐字稿.md"
         final_output_filename = parent_dir / f"{base_name}_校对稿.md"
-        fuzzy_filename = parent_dir / "模糊原文.md"
+        fuzzy_filename = parent_dir / "模糊原文.txt"
 
-        # 保存模糊原文为文件（始终以代码中的为准）
-        if fuzzy_reference_text:
+        # 模糊原文：文件优先，没有则创建后等待用户编辑
+        if not fuzzy_filename.exists():
             with open(fuzzy_filename, "w", encoding="utf-8") as f:
                 f.write(fuzzy_reference_text)
+            print(f"{Color.ORANGE}已创建 {fuzzy_filename}")
+        else:
+            print(f"{Color.ORANGE}检测到已存在 {fuzzy_filename.name}")
+        print(f"{Color.DARK_PURPLE}请在 {fuzzy_filename.name} 中整理模糊原文，保存后回到此处按回车继续...")
+        input()
+        fuzzy_reference_text = fuzzy_filename.read_text("utf-8").strip()
+        if not fuzzy_reference_text:
+            print(f"{Color.RED}错误：模糊原文为空，请填入内容后重新运行。")
+            exit(1)
 
         # 步骤 1: 整段音频直接转录 (带缓存)
         print(f"\n{Color.DARK_PURPLE}[1/5] 开始处理整段音频转录...")
@@ -143,11 +152,20 @@ class AudioProcessingPipeline:
         else:
             duration = self._get_audio_duration(audio_path)
 
-            print(f"\n{Color.ORANGE}--- 请根据精准原文，输入最终的原文元数据 ---")
-            if precision_text:
-                print(f"{Color.ORANGE}精准原文参考（结尾部分）：\n...{precision_text[-500:]}")
-            final_reference = input(f"{Color.DARK_PURPLE}请输入原文元数据（输完回车）：\n").strip()
-            final_reference = f"> 原文：{final_reference}\n"
+            origin_txt = parent_dir / "原文.txt"
+            if not origin_txt.exists():
+                origin_txt.write_text("", "utf-8")
+                print(f"{Color.ORANGE}已创建空的 {origin_txt}")
+            else:
+                print(f"{Color.ORANGE}请在 {origin_txt} 中整理原文内容后保存")
+
+            if precision_text and not origin_txt.exists():
+                pass  # already handled above
+
+            print(f"{Color.ORANGE}精准原文参考（结尾部分）：\n...{precision_text[-500:]}")
+            input(f"{Color.DARK_PURPLE}请在 {origin_txt.name} 中整理好原文，保存后回到此处按回车继续...")
+            final_reference = origin_txt.read_text("utf-8").strip()
+            final_reference = f"> 原文：{final_reference}\n" if final_reference else ""
             print(f"{Color.ORANGE}-------------------------------------------")
 
             metadata_header = (
