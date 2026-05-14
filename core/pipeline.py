@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from pydub import AudioSegment
 
@@ -38,7 +39,7 @@ class AudioProcessingPipeline:
 
         transcript_filename = parent_dir / f"{base_name}_逐字稿.md"
         final_output_filename = parent_dir / f"{base_name}_校对稿.md"
-        fuzzy_filename = parent_dir / "模糊原文.txt"
+        fuzzy_filename = parent_dir / "模糊原文.md"
 
         # 模糊原文：文件优先，没有则创建后等待用户编辑
         if not fuzzy_filename.exists():
@@ -153,17 +154,37 @@ class AudioProcessingPipeline:
             duration = self._get_audio_duration(audio_path)
 
             origin_txt = parent_dir / "原文.txt"
-            if not origin_txt.exists():
+            if precision_text:
+                matches = re.findall(r'\*\*\*\\\*(.+?)\\\*{4}', precision_text, re.DOTALL)
+                extracted = "".join(m.strip() for m in matches)
+                origin_txt.write_text(extracted, "utf-8")
+                print(f"{Color.CYAN}已从精准原文自动提取引文到 {origin_txt.name}（共 {len(matches)} 段）")
+                # 精准原文参考结尾（先打印）
+                p_sentences = re.split(r'(?<=[。！？])', precision_text)
+                p_sentences = [s.strip() for s in p_sentences if s.strip()]
+                p_last_five = p_sentences[-5:] if len(p_sentences) >= 5 else p_sentences
+                if p_last_five:
+                    print(f"{Color.ORANGE}精准原文参考（结尾部分）：")
+                    for s in p_last_five:
+                        print(f"  {s}")
+                # 原文.txt 开头两句（先打印）
+                sents = re.split(r'(?<=[。！？])', extracted)
+                sents = [s.strip() for s in sents if s.strip()]
+                first_two = sents[:2] if len(sents) >= 2 else sents
+                if first_two:
+                    print(f"{Color.CYAN}📄 原文.txt 前两句话：")
+                    for s in first_two:
+                        print(f"  {s}")
+                # 原文.txt 结尾两句（后打印）
+                last_two = sents[-2:] if len(sents) >= 2 else sents
+                if last_two:
+                    print(f"{Color.CYAN}📄 原文.txt 最后两句话：")
+                    for s in last_two:
+                        print(f"  {s}")
+            elif not origin_txt.exists():
                 origin_txt.write_text("", "utf-8")
-                print(f"{Color.ORANGE}已创建空的 {origin_txt}")
-            else:
-                print(f"{Color.ORANGE}请在 {origin_txt} 中整理原文内容后保存")
-
-            if precision_text and not origin_txt.exists():
-                pass  # already handled above
-
-            print(f"{Color.ORANGE}精准原文参考（结尾部分）：\n...{precision_text[-500:]}")
-            input(f"{Color.DARK_PURPLE}请在 {origin_txt.name} 中整理好原文，保存后回到此处按回车继续...")
+                print(f"{Color.CYAN}已创建空的 {origin_txt}")
+            input(f"{Color.DARK_PURPLE}请在 {origin_txt.name} 中检查整理，保存后回到此处按回车继续...")
             final_reference = origin_txt.read_text("utf-8").strip()
             final_reference = f"> 原文：{final_reference}\n" if final_reference else ""
             print(f"{Color.ORANGE}-------------------------------------------")

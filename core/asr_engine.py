@@ -76,23 +76,32 @@ class Qwen3ASRFlashFiletrans(BaseASR):
             task_id = task_response.output.task_id
             print(f"{Color.DARK_PURPLE}[Qwen3ASRFlash] 任务已提交，task_id: {task_id}。正在等待任务完成...")
 
-            # 使用 SDK 的 wait 方法自动轮询等待结果
-            task_result = QwenTranscription.wait(task=task_id)
+            # 使用 SDK 的 wait 方法自动轮询等待结果（含重试）
+            for attempt in range(5):
+                try:
+                    task_result = QwenTranscription.wait(task=task_id)
+                    break
+                except Exception as e:
+                    if attempt < 4:
+                        print(f"{Color.RED}⚠️ 查询任务状态失败 (尝试 {attempt+1}/5): {e}")
+                        time.sleep(5)
+                    else:
+                        raise
 
             if task_result.status_code != 200:
                 raise RuntimeError(f"查询任务状态失败! HTTP code: {task_result.status_code}, Response: {task_result}")
 
             status = task_result.output.task_status
-            
+
             if status.upper() == "SUCCEEDED":
                 print(f"{Color.GREEN}[Qwen3ASRFlash] 任务已完成！正在提取转录结果...")
-                
+
                 # 修复：阿里云返回的是单数的 result 对象，而不是 results 数组
                 result_obj = task_result.output.get("result", {})
                 if not result_obj:
                     print(f"{Color.RED}[Qwen3ASRFlash] 警告：未找到 result 字段。原始 output: {task_result.output}")
                     return ""
-                    
+
                 transcription_url = result_obj.get("transcription_url")
                 if transcription_url:
                     # 下载结果 JSON
