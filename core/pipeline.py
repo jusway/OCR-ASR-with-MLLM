@@ -1,4 +1,3 @@
-import re
 from pathlib import Path
 from pydub import AudioSegment
 
@@ -29,6 +28,8 @@ class AudioProcessingPipeline:
             verifier_user_prompt_template="",
             precision_sys_prompt="",
             precision_user_prompt_template="",
+            extraction_sys_prompt="",
+            extraction_user_prompt_template="",
             year="",
             author="",
             reference_text=""):
@@ -148,35 +149,20 @@ class AudioProcessingPipeline:
         with open(final_output_filename, "r", encoding="utf-8") as f:
             current_written_text = f.read()
 
-        # 正则提取 原文.txt（独立于元数据检查，每次有新的 precision_text 都更新）
+        # 模型提取 原文.txt（独立于元数据检查，每次有新的 precision_text 都更新）
         origin_txt = parent_dir / "原文.txt"
-        if precision_text:
-            matches = re.findall(r'\*\*\*\\\*(.+?)\\\*{4}', precision_text, re.DOTALL)
-            extracted = "".join(m.strip() for m in matches)
+        if precision_text and extraction_sys_prompt and extraction_user_prompt_template:
+            print(f"\n{Color.DARK_PURPLE}[提取原文] 正在通过模型从精准原文中提取纯原文...")
+            extraction_prompt = extraction_user_prompt_template.format(
+                precision_text=precision_text
+            )
+            extracted = self.text_engine.generate(extraction_sys_prompt, extraction_prompt).strip()
             origin_txt.write_text(extracted, "utf-8")
-            print(f"{Color.CYAN}已从精准原文自动提取引文到 {origin_txt.name}（共 {len(matches)} 段）")
-            # 精准原文参考结尾（先打印）
-            p_sentences = re.split(r'(?<=[。！？])', precision_text)
-            p_sentences = [s.strip() for s in p_sentences if s.strip()]
-            p_last_five = p_sentences[-5:] if len(p_sentences) >= 5 else p_sentences
-            if p_last_five:
-                print(f"{Color.ORANGE}精准原文参考（结尾部分）：")
-                for s in p_last_five:
-                    print(f"  {s}")
-            # 原文.txt 开头两句（先打印）
-            sents = re.split(r'(?<=[。！？])', extracted)
-            sents = [s.strip() for s in sents if s.strip()]
-            first_two = sents[:2] if len(sents) >= 2 else sents
-            if first_two:
-                print(f"{Color.CYAN}📄 原文.txt 前两句话：")
-                for s in first_two:
-                    print(f"  {s}")
-            # 原文.txt 结尾两句（后打印）
-            last_two = sents[-2:] if len(sents) >= 2 else sents
-            if last_two:
-                print(f"{Color.CYAN}📄 原文.txt 最后两句话：")
-                for s in last_two:
-                    print(f"  {s}")
+            print(f"{Color.CYAN}✅ 已通过模型提取原文到 {origin_txt.name}")
+        elif precision_text:
+            # 无提取提示词时，直接使用精准原文全部内容
+            origin_txt.write_text(precision_text, "utf-8")
+            print(f"{Color.CYAN}已将精准原文直接写入 {origin_txt.name}")
         elif not origin_txt.exists():
             origin_txt.write_text("", "utf-8")
             print(f"{Color.CYAN}已创建空的 {origin_txt}")
@@ -220,7 +206,8 @@ def run(*, folder_path, year, author, reference_text, asr_model_name,
         available_models, selected_model,
         text_system_prompt, text_user_prompt_template,
         verifier_system_prompt, verifier_user_prompt_template,
-        precision_system_prompt="", precision_user_prompt_template=""):
+        precision_system_prompt="", precision_user_prompt_template="",
+        extraction_system_prompt="", extraction_user_prompt_template=""):
     """执行完整流水线：文件发现 → 引擎初始化 → 运行"""
 
     if not folder_path.exists():
@@ -263,6 +250,8 @@ def run(*, folder_path, year, author, reference_text, asr_model_name,
         verifier_user_prompt_template=verifier_user_prompt_template,
         precision_sys_prompt=precision_system_prompt,
         precision_user_prompt_template=precision_user_prompt_template,
+        extraction_sys_prompt=extraction_system_prompt,
+        extraction_user_prompt_template=extraction_user_prompt_template,
         year=year,
         author=author,
         reference_text=reference_text
