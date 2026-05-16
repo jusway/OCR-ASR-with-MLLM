@@ -148,42 +148,44 @@ class AudioProcessingPipeline:
         with open(final_output_filename, "r", encoding="utf-8") as f:
             current_written_text = f.read()
 
+        # 正则提取 原文.txt（独立于元数据检查，每次有新的 precision_text 都更新）
+        origin_txt = parent_dir / "原文.txt"
+        if precision_text:
+            matches = re.findall(r'\*\*\*\\\*(.+?)\\\*{4}', precision_text, re.DOTALL)
+            extracted = "".join(m.strip() for m in matches)
+            origin_txt.write_text(extracted, "utf-8")
+            print(f"{Color.CYAN}已从精准原文自动提取引文到 {origin_txt.name}（共 {len(matches)} 段）")
+            # 精准原文参考结尾（先打印）
+            p_sentences = re.split(r'(?<=[。！？])', precision_text)
+            p_sentences = [s.strip() for s in p_sentences if s.strip()]
+            p_last_five = p_sentences[-5:] if len(p_sentences) >= 5 else p_sentences
+            if p_last_five:
+                print(f"{Color.ORANGE}精准原文参考（结尾部分）：")
+                for s in p_last_five:
+                    print(f"  {s}")
+            # 原文.txt 开头两句（先打印）
+            sents = re.split(r'(?<=[。！？])', extracted)
+            sents = [s.strip() for s in sents if s.strip()]
+            first_two = sents[:2] if len(sents) >= 2 else sents
+            if first_two:
+                print(f"{Color.CYAN}📄 原文.txt 前两句话：")
+                for s in first_two:
+                    print(f"  {s}")
+            # 原文.txt 结尾两句（后打印）
+            last_two = sents[-2:] if len(sents) >= 2 else sents
+            if last_two:
+                print(f"{Color.CYAN}📄 原文.txt 最后两句话：")
+                for s in last_two:
+                    print(f"  {s}")
+        elif not origin_txt.exists():
+            origin_txt.write_text("", "utf-8")
+            print(f"{Color.CYAN}已创建空的 {origin_txt}")
+
         if current_written_text.strip().startswith("> 标题："):
             print(f"{Color.GREEN}✅ 检测到校对稿已包含元数据，跳过元数据。")
         else:
             duration = self._get_audio_duration(audio_path)
 
-            origin_txt = parent_dir / "原文.txt"
-            if precision_text:
-                matches = re.findall(r'\*\*\*\\\*(.+?)\\\*{4}', precision_text, re.DOTALL)
-                extracted = "".join(m.strip() for m in matches)
-                origin_txt.write_text(extracted, "utf-8")
-                print(f"{Color.CYAN}已从精准原文自动提取引文到 {origin_txt.name}（共 {len(matches)} 段）")
-                # 精准原文参考结尾（先打印）
-                p_sentences = re.split(r'(?<=[。！？])', precision_text)
-                p_sentences = [s.strip() for s in p_sentences if s.strip()]
-                p_last_five = p_sentences[-5:] if len(p_sentences) >= 5 else p_sentences
-                if p_last_five:
-                    print(f"{Color.ORANGE}精准原文参考（结尾部分）：")
-                    for s in p_last_five:
-                        print(f"  {s}")
-                # 原文.txt 开头两句（先打印）
-                sents = re.split(r'(?<=[。！？])', extracted)
-                sents = [s.strip() for s in sents if s.strip()]
-                first_two = sents[:2] if len(sents) >= 2 else sents
-                if first_two:
-                    print(f"{Color.CYAN}📄 原文.txt 前两句话：")
-                    for s in first_two:
-                        print(f"  {s}")
-                # 原文.txt 结尾两句（后打印）
-                last_two = sents[-2:] if len(sents) >= 2 else sents
-                if last_two:
-                    print(f"{Color.CYAN}📄 原文.txt 最后两句话：")
-                    for s in last_two:
-                        print(f"  {s}")
-            elif not origin_txt.exists():
-                origin_txt.write_text("", "utf-8")
-                print(f"{Color.CYAN}已创建空的 {origin_txt}")
             input(f"{Color.DARK_PURPLE}请在 {origin_txt.name} 中检查整理，保存后回到此处按回车继续...")
             final_reference = origin_txt.read_text("utf-8").strip()
             final_reference = f"> 原文：{final_reference}\n" if final_reference else ""
