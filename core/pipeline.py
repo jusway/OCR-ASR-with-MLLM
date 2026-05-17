@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from pydub import AudioSegment
 
@@ -6,7 +7,7 @@ from core.utils import Color
 
 
 class AudioProcessingPipeline:
-    """端到端音频处理流水线：转录 → 校对 → 精准定位 → 信息丢失检查 → 元数据"""
+    """端到端音频处理流水线：转录 → 校对 → 信息丢失检查 → 精准定位 → 元数据"""
 
     def __init__(self, asr_engine, text_engine):
         self.asr_engine = asr_engine
@@ -18,6 +19,24 @@ class AudioProcessingPipeline:
         hours, remainder = divmod(duration_seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+    @staticmethod
+    def _print_head_tail(text, label="原文.txt"):
+        """打印文本的前两句和后两句"""
+        sents = re.split(r'(?<=[。！？])', text)
+        sents = [s.strip() for s in sents if s.strip()]
+        if not sents:
+            return
+        first_two = sents[:2]
+        last_two = sents[-2:]
+        if first_two:
+            print(f"{Color.CYAN}📄 {label} 前两句：")
+            for s in first_two:
+                print(f"  {s}")
+        if last_two:
+            print(f"{Color.CYAN}📄 {label} 最后两句：")
+            for s in last_two:
+                print(f"  {s}")
 
     def run(self,
             audio_path,
@@ -89,29 +108,8 @@ class AudioProcessingPipeline:
                 f.write(written_text)
             print(f"{Color.GREEN}校对稿已保存至: {final_output_filename}")
 
-        # 步骤 3: 精准定位原文 (带缓存)
-        precision_filename = parent_dir / f"{base_name}_精准原文.md"
-        if precision_sys_prompt and precision_user_prompt_template:
-            print(f"\n{Color.DARK_PURPLE}[3/5] 开始精准定位原文...")
-            if precision_filename.exists():
-                print(f"{Color.GREEN}✅ 检测到已存在精准原文，直接复用: {precision_filename.name}")
-                with open(precision_filename, "r", encoding="utf-8") as f:
-                    precision_text = f.read()
-            else:
-                print(f"{Color.DARK_PURPLE}正在根据校对稿定位精准原文范围...")
-                precision_prompt = precision_user_prompt_template.format(
-                    written_text=written_text,
-                    fuzzy_reference_text=fuzzy_reference_text
-                )
-                precision_text = self.text_engine.generate(precision_sys_prompt, precision_prompt)
-                with open(precision_filename, "w", encoding="utf-8") as f:
-                    f.write(precision_text)
-                print(f"{Color.GREEN}精准原文已保存至: {precision_filename}")
-        else:
-            precision_text = ""
-
-        # 步骤 4: 信息丢失检查 (带缓存)
-        print(f"\n{Color.DARK_PURPLE}[4/5] 开始检查信息丢失情况...")
+        # 步骤 3: 信息丢失检查 (带缓存)
+        print(f"\n{Color.DARK_PURPLE}[3/5] 开始检查信息丢失情况...")
 
         transcript_len = len(transcript_text)
         written_len = len(written_text)
@@ -128,11 +126,10 @@ class AudioProcessingPipeline:
             verifier_user_prompt = verifier_user_prompt_template.format(
                 transcript_text=transcript_text,
                 written_text=written_text,
-                precision_text=precision_text
             )
 
             verification_report = self.text_engine.generate(verifier_sys_prompt, verifier_user_prompt)
-            has_loss = "无遗漏信息" not in verification_report
+            has_loss = "【无遗漏信息】" not in verification_report
             tag = "有遗漏" if has_loss else "无遗漏"
             verification_filename = parent_dir / f"丢失信息检查_{tag}.md"
             verification_filename.write_text(verification_report, "utf-8")
@@ -144,14 +141,42 @@ class AudioProcessingPipeline:
             print("...")
         print(f"{Color.ORANGE}----------------------------")
 
+        # 步骤 4: 精准定位原文 (带缓存)
+        precision_text = ""
+        precision_filename = parent_dir / f"{base_name}_精准原文.md"
+        if precision_sys_prompt and precision_user_prompt_template:
+            print(f"\n{Color.DARK_PURPLE}[4/5] 开始精准定位原文...")
+            if precision_filename.exists():
+                print(f"{Color.GREEN}✅ 检测到已存在精准原文，直接复用: {precision_filename.name}")
+                with open(precision_filename, "r", encoding="utf-8") as f:
+                    precision_text = f.read()
+            else:
+                print(f"{Color.DARK_PURPLE}正在根据校对稿定位精准原文范围...")
+                precision_prompt = precision_user_prompt_template.format(
+                    written_text=written_text,
+                    fuzzy_reference_text=fuzzy_reference_text
+                )
+                precision_text = self.text_engine.generate(precision_sys_prompt, precision_prompt)
+                with open(precision_filename, "w", encoding="utf-8") as f:
+                    f.write(precision_text)
+                print(f"{Color.GREEN}精准原文已保存至: {precision_filename}")
+
+        if precision_text:
+            self._print_head_tail(precision_text, precision_filename.name)
+
         # 步骤 5: 补充元数据并插入校对稿
         print(f"\n{Color.DARK_PURPLE}[5/5] 准备补充元数据信息...")
         with open(final_output_filename, "r", encoding="utf-8") as f:
             current_written_text = f.read()
 
-        # 模型提取 原文.txt（独立于元数据检查，每次有新的 precision_text 都更新）
+        # 模型提取 原文.txt（带缓存）
         origin_txt = parent_dir / "原文.txt"
-        if precision_text and extraction_sys_prompt and extraction_user_prompt_template:
+        if origin_txt.exists():
+            print(f"{Color.GREEN}✅ 检测到已存在 {origin_txt.name}，直接复用")
+            content_for_print = origin_txt.read_text("utf-8").strip()
+            if content_for_print:
+                self._print_head_tail(content_for_print)
+        elif precision_text and extraction_sys_prompt and extraction_user_prompt_template:
             print(f"\n{Color.DARK_PURPLE}[提取原文] 正在通过模型从精准原文中提取纯原文...")
             extraction_prompt = extraction_user_prompt_template.format(
                 precision_text=precision_text
@@ -159,11 +184,13 @@ class AudioProcessingPipeline:
             extracted = self.text_engine.generate(extraction_sys_prompt, extraction_prompt).strip()
             origin_txt.write_text(extracted, "utf-8")
             print(f"{Color.CYAN}✅ 已通过模型提取原文到 {origin_txt.name}")
+            self._print_head_tail(extracted)
         elif precision_text:
             # 无提取提示词时，直接使用精准原文全部内容
             origin_txt.write_text(precision_text, "utf-8")
             print(f"{Color.CYAN}已将精准原文直接写入 {origin_txt.name}")
-        elif not origin_txt.exists():
+            self._print_head_tail(precision_text)
+        else:
             origin_txt.write_text("", "utf-8")
             print(f"{Color.CYAN}已创建空的 {origin_txt}")
 
