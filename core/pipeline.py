@@ -1,4 +1,5 @@
 import re
+import time
 from pathlib import Path
 from pydub import AudioSegment
 
@@ -9,9 +10,10 @@ from core.utils import Color
 class AudioProcessingPipeline:
     """端到端音频处理流水线：转录 → 校对 → 信息丢失检查 → 精准定位 → 元数据"""
 
-    def __init__(self, asr_engine, text_engine):
+    def __init__(self, asr_engine, text_engine, fast_text_engine=None):
         self.asr_engine = asr_engine
         self.text_engine = text_engine
+        self._fast_engine = fast_text_engine or text_engine
 
     def _get_audio_duration(self, audio_path):
         audio = AudioSegment.from_mp3(audio_path)
@@ -23,13 +25,22 @@ class AudioProcessingPipeline:
     def _save_thinking(self, label: str, parent_dir: Path):
         """保存思维链内容到文件（若引擎有返回）"""
         if hasattr(self.text_engine, '_last_reasoning_content') and self.text_engine._last_reasoning_content:
-            thinking_path = parent_dir / f"思维链_{label}.txt"
+            thinking_path = parent_dir / f"思维链_{label}.md"
             thinking_path.write_text(self.text_engine._last_reasoning_content, encoding="utf-8")
             self.text_engine._last_reasoning_content = None  # 消费后清空
-            print(f"{Color.ORANGE}🧠 思维链已保存: {thinking_path.name}")
+            print(f"{Color.GREEN}🧠 思维链已保存: {thinking_path.name}")
 
     @staticmethod
-    def _print_head_tail(text, label="原文.txt"):
+    def _format_time(seconds: float) -> str:
+        """将秒数格式化为 xx分xx秒"""
+        minutes = int(seconds // 60)
+        secs = int(seconds % 60)
+        if minutes > 0:
+            return f"{minutes}分{secs}秒"
+        return f"{secs}秒"
+
+    @staticmethod
+    def _print_head_tail(text, label="原文.md"):
         """打印文本的前两句和后两句"""
         sents = re.split(r'(?<=[。！？])', text)
         sents = [s.strip() for s in sents if s.strip()]
@@ -64,6 +75,7 @@ class AudioProcessingPipeline:
         audio_path_obj = Path(audio_path)
         base_name = audio_path_obj.stem
         parent_dir = audio_path_obj.parent
+        _total_time = 0.0
 
         transcript_filename = parent_dir / f"{base_name}_逐字稿.md"
         final_output_filename = parent_dir / f"{base_name}_校对稿.md"
@@ -73,9 +85,9 @@ class AudioProcessingPipeline:
         if not fuzzy_filename.exists():
             with open(fuzzy_filename, "w", encoding="utf-8") as f:
                 f.write(fuzzy_reference_text)
-            print(f"{Color.ORANGE}已创建 {fuzzy_filename}")
+            print(f"{Color.GREEN}✅ 已创建 {fuzzy_filename}")
         else:
-            print(f"{Color.ORANGE}检测到已存在 {fuzzy_filename.name}")
+            print(f"{Color.GREEN}检测到已存在 {fuzzy_filename.name}")
         print(f"{Color.DARK_PURPLE}请在 {fuzzy_filename.name} 中整理模糊原文，保存后回到此处按回车继续...")
         input()
         fuzzy_reference_text = fuzzy_filename.read_text("utf-8").strip()
@@ -91,7 +103,11 @@ class AudioProcessingPipeline:
                 transcript_text = f.read()
         else:
             print(f"{Color.DARK_PURPLE}正在调用 ASR 引擎生成逐字稿...")
+            _t0 = time.time()
             transcript_text = self.asr_engine.recognize(audio_path)
+            _elapsed = time.time() - _t0
+            _total_time += _elapsed
+            print(f"{Color.GREEN}⏱️ ASR 转录耗时: {self._format_time(_elapsed)}")
 
             with open(transcript_filename, "w", encoding="utf-8") as f:
                 f.write(transcript_text)
@@ -110,7 +126,11 @@ class AudioProcessingPipeline:
                 transcript_text=transcript_text
             )
 
+            _t0 = time.time()
             written_text = self.text_engine.generate(text_sys_prompt, user_prompt)
+            _elapsed = time.time() - _t0
+            _total_time += _elapsed
+            print(f"{Color.GREEN}⏱️ 校对稿模型调用耗时: {self._format_time(_elapsed)}")
             self._save_thinking("校对", parent_dir)
 
             with open(final_output_filename, "w", encoding="utf-8") as f:
@@ -137,7 +157,11 @@ class AudioProcessingPipeline:
                 written_text=written_text,
             )
 
+            _t0 = time.time()
             verification_report = self.text_engine.generate(verifier_sys_prompt, verifier_user_prompt)
+            _elapsed = time.time() - _t0
+            _total_time += _elapsed
+            print(f"{Color.GREEN}⏱️ 信息丢失检查模型调用耗时: {self._format_time(_elapsed)}")
             self._save_thinking("信息丢失检查", parent_dir)
             has_loss = "【无遗漏信息】" not in verification_report
             tag = "有遗漏" if has_loss else "无遗漏"
@@ -150,6 +174,11 @@ class AudioProcessingPipeline:
         if len(verification_report.split("\n")) > 10:
             print("...")
         print(f"{Color.ORANGE}----------------------------")
+
+        # 有遗漏信息则终止流水线
+        if "【无遗漏信息】" not in verification_report:
+            print(f"{Color.RED}❌ 检测到信息遗漏，流水线终止。请手动修改校对稿后重新运行。{Color.END}")
+            exit(1)
 
         # 步骤 4: 精准定位原文 (带缓存)
         precision_text = ""
@@ -166,7 +195,11 @@ class AudioProcessingPipeline:
                     written_text=written_text,
                     fuzzy_reference_text=fuzzy_reference_text
                 )
-                precision_text = self.text_engine.generate(precision_sys_prompt, precision_prompt)
+                _t0 = time.time()
+                precision_text = self._fast_engine.generate(precision_sys_prompt, precision_prompt)
+                _elapsed = time.time() - _t0
+                _total_time += _elapsed
+                print(f"{Color.GREEN}⏱️ 精准定位原文模型调用耗时: {self._format_time(_elapsed)}")
                 self._save_thinking("精准定位原文", parent_dir)
                 with open(precision_filename, "w", encoding="utf-8") as f:
                     f.write(precision_text)
@@ -180,8 +213,8 @@ class AudioProcessingPipeline:
         with open(final_output_filename, "r", encoding="utf-8") as f:
             current_written_text = f.read()
 
-        # 模型提取 原文.txt（带缓存）
-        origin_txt = parent_dir / "原文.txt"
+        # 模型提取 原文.md（带缓存）
+        origin_txt = parent_dir / "原文.md"
         if origin_txt.exists():
             print(f"{Color.GREEN}✅ 检测到已存在 {origin_txt.name}，直接复用")
             content_for_print = origin_txt.read_text("utf-8").strip()
@@ -192,19 +225,25 @@ class AudioProcessingPipeline:
             extraction_prompt = extraction_user_prompt_template.format(
                 precision_text=precision_text
             )
-            extracted = self.text_engine.generate(extraction_sys_prompt, extraction_prompt).strip()
+            _t0 = time.time()
+            extracted = self._fast_engine.generate(extraction_sys_prompt, extraction_prompt).strip()
+            _elapsed = time.time() - _t0
+            _total_time += _elapsed
+            print(f"{Color.GREEN}⏱️ 提取原文模型调用耗时: {self._format_time(_elapsed)}")
             self._save_thinking("提取原文", parent_dir)
             origin_txt.write_text(extracted, "utf-8")
-            print(f"{Color.ORANGE}✅ 已通过模型提取原文到 {origin_txt.name}")
+            print(f"{Color.GREEN}✅ 已通过模型提取原文到 {origin_txt.name}")
             self._print_head_tail(extracted)
         elif precision_text:
             # 无提取提示词时，直接使用精准原文全部内容
             origin_txt.write_text(precision_text, "utf-8")
-            print(f"{Color.ORANGE}已将精准原文直接写入 {origin_txt.name}")
+            print(f"{Color.GREEN}已将精准原文直接写入 {origin_txt.name}")
             self._print_head_tail(precision_text)
         else:
             origin_txt.write_text("", "utf-8")
-            print(f"{Color.ORANGE}已创建空的 {origin_txt}")
+            print(f"{Color.GREEN}已创建空的 {origin_txt}")
+
+        print(f"{Color.GREEN}⏱️ 本次全部模型调用总耗时: {self._format_time(_total_time)}")
 
         if current_written_text.strip().startswith("> 标题："):
             print(f"{Color.GREEN}✅ 检测到校对稿已包含元数据，跳过元数据。")
@@ -242,7 +281,7 @@ class AudioProcessingPipeline:
 
 
 def run(*, folder_path, year, author, reference_text, asr_model_name,
-        available_models, selected_model,
+        available_models, selected_model, fast_selected_model=None,
         text_system_prompt, text_user_prompt_template,
         verifier_system_prompt, verifier_user_prompt_template,
         precision_system_prompt="", precision_user_prompt_template="",
@@ -274,10 +313,20 @@ def run(*, folder_path, year, author, reference_text, asr_model_name,
     print(f"{Color.DARK_PURPLE}正在初始化 {engine_cls.__name__} 引擎 ({selected_model} -> {engine_kwargs['model_name']})...")
     text_engine = engine_cls(**engine_kwargs)
 
+    # 初始化快速引擎（用于后两步，若不指定则回退到主引擎）
+    fast_text_engine = None
+    if fast_selected_model and fast_selected_model in available_models:
+        fast_engine_cls, fast_engine_kwargs = available_models[fast_selected_model]
+        print(f"{Color.DARK_PURPLE}正在初始化 {fast_engine_cls.__name__} 快速引擎 ({fast_selected_model} -> {fast_engine_kwargs['model_name']})...")
+        fast_text_engine = fast_engine_cls(**fast_engine_kwargs)
+    else:
+        print(f"{Color.DARK_PURPLE}未指定快速引擎，后两步将复用主引擎")
+
     # 跑流水线
     pipeline = AudioProcessingPipeline(
         asr_engine=asr_engine,
-        text_engine=text_engine
+        text_engine=text_engine,
+        fast_text_engine=fast_text_engine
     )
 
     pipeline.run(

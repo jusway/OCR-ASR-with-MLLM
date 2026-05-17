@@ -8,7 +8,7 @@ from core.text_engine import DeepSeekText, GeminiText, NvidiaText
 # ============================================================
 
 # 1) 任务文件夹（脚本自动找 .mp3）
-folder_path = Path(r"摩诃止观-定智法师 2017/03正说分第一大意发大心/摩诃止观01正说分/2017年12月25日摩诃止观01正说分第一大意发大心030")
+folder_path = Path(r"摩诃止观-定智法师 2017/03正说分第一大意发大心/摩诃止观01正说分/2017年12月25日摩诃止观01正说分第一大意发大心032")
 
 # 2) 元数据（写入校对稿头部）
 year = "2017"
@@ -19,11 +19,17 @@ asr_model_name = "qwen3-asr-flash-filetrans"
 
 # 4) 文本模型：想换模型只改 SELECTED_MODEL 这一行的 key
 AVAILABLE_MODELS = {
-    "deepseek": (DeepSeekText, {"model_name": "deepseek-v4-pro",
-                                "temperature": 1.0, "top_p": 1.0,
-                                "enable_thinking": True, "reasoning_effort": "max"}),
+    "deepseek": (DeepSeekText, {                          # 前3步：长思考
+        "model_name": "deepseek-v4-pro",
+        "enable_thinking": True, "reasoning_effort": "max",
+    }),
+    "deepseek-fast": (DeepSeekText, {                     # 后2步：无思考
+        "model_name": "deepseek-v4-flash",
+        "enable_thinking": False,
+    }),
 }
 SELECTED_MODEL = "deepseek"
+FAST_SELECTED_MODEL = "deepseek-fast"
 
 # 模糊原文种子（首次运行时自动创建 模糊原文.md，此后以文件内容为准）
 reference_text = ""
@@ -35,14 +41,15 @@ text_user_prompt_template = """\
 逐字稿是一位师父在讲解《摩诃止观辅行传弘决辑注》
 原文参考是我复制给你的，这位师父讲解《摩诃止观辅行传弘决辑注》的大致范围。
 ## 任务
-按照且仅按照校对规则，来校对逐字稿。
+校对逐字稿。
 ## 校对规则：
 修正错别字：结合佛学常识和【原文参考】，纠正同音字和专有术语误识。
 补充标点并根据语义自然分段。
 去掉“嗯”“啊”“呃”“哦”“唉”等语气停顿词。
 去掉“这个这个”“那个那个”等口语过渡词。
-保证逐字稿的每一个知识点都得到完全的保留。
-讲解中引用【原文参考】词句时，必须用『』括起来。
+讲解中所有的引经据典（包括引用原文参考），必须用『』括起来。
+## 重要
+思考逐字稿讲的每一个知识点，然后保证每一个知识点的信息在输出内容中都得到完全的保留。
 
 【原文参考】
 {fuzzy_reference_text}
@@ -56,9 +63,10 @@ verifier_user_prompt_template = """
 逐字稿是一位师父在讲解《摩诃止观辅行传弘决辑注》。
 校对稿是对逐字稿进行校对得到的，包括修改错别字、专有名词校对、去掉语气词等等。
 ## 任务
-你的任务是检查校对稿是否丢失了逐字稿的关键信息。
-如果没有遗漏，直接输出“【无遗漏信息】”。
-如果有遗漏，请解释遗漏了什么。
+思考逐字稿讲的每一个知识点是什么，然后思考每一个知识点的信息在校对稿中是否得到了完全的保留。
+如果确认没有遗漏信息，直接输出“【无遗漏信息】”。
+如果有遗漏，请详细解释遗漏了什么。
+
 【逐字稿】{transcript_text}
 【校对稿】{written_text}
 """
@@ -117,6 +125,7 @@ if __name__ == "__main__":
         asr_model_name=asr_model_name,
         available_models=AVAILABLE_MODELS,
         selected_model=SELECTED_MODEL,
+        fast_selected_model=FAST_SELECTED_MODEL,
         text_system_prompt=text_system_prompt,
         text_user_prompt_template=text_user_prompt_template,
         verifier_system_prompt=verifier_system_prompt,
