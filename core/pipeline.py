@@ -20,6 +20,14 @@ class AudioProcessingPipeline:
         minutes, seconds = divmod(remainder, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
+    def _save_thinking(self, label: str, parent_dir: Path):
+        """保存思维链内容到文件（若引擎有返回）"""
+        if hasattr(self.text_engine, '_last_reasoning_content') and self.text_engine._last_reasoning_content:
+            thinking_path = parent_dir / f"思维链_{label}.txt"
+            thinking_path.write_text(self.text_engine._last_reasoning_content, encoding="utf-8")
+            self.text_engine._last_reasoning_content = None  # 消费后清空
+            print(f"{Color.ORANGE}🧠 思维链已保存: {thinking_path.name}")
+
     @staticmethod
     def _print_head_tail(text, label="原文.txt"):
         """打印文本的前两句和后两句"""
@@ -30,11 +38,11 @@ class AudioProcessingPipeline:
         first_two = sents[:2]
         last_two = sents[-2:]
         if first_two:
-            print(f"{Color.CYAN}📄 {label} 前两句：")
+            print(f"{Color.ORANGE}📄 {label} 前两句：")
             for s in first_two:
                 print(f"  {s}")
         if last_two:
-            print(f"{Color.CYAN}📄 {label} 最后两句：")
+            print(f"{Color.ORANGE}📄 {label} 最后两句：")
             for s in last_two:
                 print(f"  {s}")
 
@@ -103,6 +111,7 @@ class AudioProcessingPipeline:
             )
 
             written_text = self.text_engine.generate(text_sys_prompt, user_prompt)
+            self._save_thinking("校对", parent_dir)
 
             with open(final_output_filename, "w", encoding="utf-8") as f:
                 f.write(written_text)
@@ -129,6 +138,7 @@ class AudioProcessingPipeline:
             )
 
             verification_report = self.text_engine.generate(verifier_sys_prompt, verifier_user_prompt)
+            self._save_thinking("信息丢失检查", parent_dir)
             has_loss = "【无遗漏信息】" not in verification_report
             tag = "有遗漏" if has_loss else "无遗漏"
             verification_filename = parent_dir / f"丢失信息检查_{tag}.md"
@@ -157,6 +167,7 @@ class AudioProcessingPipeline:
                     fuzzy_reference_text=fuzzy_reference_text
                 )
                 precision_text = self.text_engine.generate(precision_sys_prompt, precision_prompt)
+                self._save_thinking("精准定位原文", parent_dir)
                 with open(precision_filename, "w", encoding="utf-8") as f:
                     f.write(precision_text)
                 print(f"{Color.GREEN}精准原文已保存至: {precision_filename}")
@@ -182,17 +193,18 @@ class AudioProcessingPipeline:
                 precision_text=precision_text
             )
             extracted = self.text_engine.generate(extraction_sys_prompt, extraction_prompt).strip()
+            self._save_thinking("提取原文", parent_dir)
             origin_txt.write_text(extracted, "utf-8")
-            print(f"{Color.CYAN}✅ 已通过模型提取原文到 {origin_txt.name}")
+            print(f"{Color.ORANGE}✅ 已通过模型提取原文到 {origin_txt.name}")
             self._print_head_tail(extracted)
         elif precision_text:
             # 无提取提示词时，直接使用精准原文全部内容
             origin_txt.write_text(precision_text, "utf-8")
-            print(f"{Color.CYAN}已将精准原文直接写入 {origin_txt.name}")
+            print(f"{Color.ORANGE}已将精准原文直接写入 {origin_txt.name}")
             self._print_head_tail(precision_text)
         else:
             origin_txt.write_text("", "utf-8")
-            print(f"{Color.CYAN}已创建空的 {origin_txt}")
+            print(f"{Color.ORANGE}已创建空的 {origin_txt}")
 
         if current_written_text.strip().startswith("> 标题："):
             print(f"{Color.GREEN}✅ 检测到校对稿已包含元数据，跳过元数据。")

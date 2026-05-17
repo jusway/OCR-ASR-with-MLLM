@@ -8,7 +8,7 @@ from core.text_engine import DeepSeekText, GeminiText, NvidiaText
 # ============================================================
 
 # 1) 任务文件夹（脚本自动找 .mp3）
-folder_path = Path(r"摩诃止观-定智法师 2017/03正说分第一大意发大心/摩诃止观01正说分/2017年12月24日摩诃止观01正说分第一大意发大心028")
+folder_path = Path(r"摩诃止观-定智法师 2017/03正说分第一大意发大心/摩诃止观01正说分/2017年12月25日摩诃止观01正说分第一大意发大心030")
 
 # 2) 元数据（写入校对稿头部）
 year = "2017"
@@ -19,7 +19,9 @@ asr_model_name = "qwen3-asr-flash-filetrans"
 
 # 4) 文本模型：想换模型只改 SELECTED_MODEL 这一行的 key
 AVAILABLE_MODELS = {
-    "deepseek": (DeepSeekText, {"model_name": "deepseek-v4-pro",                   "temperature": 1.0, "top_p": 1.0}),
+    "deepseek": (DeepSeekText, {"model_name": "deepseek-v4-pro",
+                                "temperature": 1.0, "top_p": 1.0,
+                                "enable_thinking": True, "reasoning_effort": "max"}),
 }
 SELECTED_MODEL = "deepseek"
 
@@ -67,9 +69,11 @@ precision_user_prompt_template = """\
 ## 背景
 校对稿是一位师父在讲解《摩诃止观辅行传弘决辑注》
 原文大致范围是我估摸着这个校对稿所讲的《摩诃止观辅行传弘决辑注》的大致范围，复制给你看。
+原文大致范围前半部分是正文，后半部分（如果有的话）是对正文的注脚。
 ## 任务
-你的任务是思考【校对稿】的内容对应【原文大致范围】中从哪里开始，到哪里结束。
-然后原封不动地输出【原文大致范围】从这个开始到结束的全部内容，包括格式也要完全一致。
+你的任务是思考【校对稿】的内容对应【原文大致范围】（前半部分），从哪里开始讲，到哪里结束讲解。
+然后输出且仅输出这个开始到结束的内容。
+也就是说，我想要你定位校对稿到底讲解了原文大致范围的哪一段内容。
 
 【校对稿】
 {written_text}
@@ -85,6 +89,7 @@ extraction_user_prompt_template = """\
 可能会有些乱码。
 ## 任务
 请从文献中提取出纯粹的摩诃止观正文输出。
+正文按顺序直接拼接就好，不使用换行符等等。
 一般来说摩诃止观正文被**包裹，例如：**若能如此简非显是，体权识实而发心者，是一切诸佛种。**
 ## 举例子
 输入：

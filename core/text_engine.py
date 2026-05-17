@@ -254,7 +254,9 @@ class NvidiaText(BaseTextModel):
             try:
                 response = self.client.chat.completions.create(**self._get_kwargs(messages, stream=False))
                 if response and response.choices:
-                    return response.choices[0].message.content or ""
+                    msg = response.choices[0].message
+                    self._last_reasoning_content = msg.reasoning_content if hasattr(msg, 'reasoning_content') else None
+                    return msg.content or ""
             except Exception as e:
                 if attempt < 4:
                     print(f"{Color.RED}⚠️ {self.model_name} 调用失败 (尝试 {attempt+1}/5): {e}")
@@ -268,8 +270,16 @@ class NvidiaText(BaseTextModel):
             try:
                 response = self.client.chat.completions.create(**self._get_kwargs(messages, stream=True))
                 for chunk in response:
-                    if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                        yield chunk.choices[0].delta.content
+                    if not chunk.choices:
+                        continue
+                    delta = chunk.choices[0].delta
+                    if not delta:
+                        continue
+                    # 思考模式：跳过 reasoning_content，只产出 content
+                    if hasattr(delta, 'reasoning_content') and delta.reasoning_content:
+                        continue
+                    if delta.content:
+                        yield delta.content
                 return
             except Exception as e:
                 if attempt < 4:
@@ -293,6 +303,7 @@ class DeepSeekText(BaseTextModel):
         self.api_key = os.getenv("DEEPSEEK_API_KEY")
         self.enable_thinking = enable_thinking
         self.reasoning_effort = reasoning_effort
+        self._last_reasoning_content = None
         if not self.api_key:
             raise ValueError("未找到 DEEPSEEK_API_KEY，请设置环境变量。")
 
@@ -305,13 +316,15 @@ class DeepSeekText(BaseTextModel):
         kwargs = {
             "model": self.model_name,
             "messages": messages,
-            "temperature": self.temperature,
-            "top_p": self.top_p,
             "stream": stream
         }
         if self.enable_thinking:
+            # 思考模式下 temperature / top_p 不生效，不传更干净
             kwargs["reasoning_effort"] = self.reasoning_effort
             kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
+        else:
+            kwargs["temperature"] = self.temperature
+            kwargs["top_p"] = self.top_p
         return kwargs
 
     def _build_messages(self, system_prompt: str, prompt: str) -> list:
@@ -327,7 +340,9 @@ class DeepSeekText(BaseTextModel):
             try:
                 response = self.client.chat.completions.create(**self._get_kwargs(messages, stream=False))
                 if response and response.choices:
-                    return response.choices[0].message.content or ""
+                    msg = response.choices[0].message
+                    self._last_reasoning_content = msg.reasoning_content if hasattr(msg, 'reasoning_content') else None
+                    return msg.content or ""
             except Exception as e:
                 if attempt < 4:
                     print(f"{Color.RED}⚠️ {self.model_name} 调用失败 (尝试 {attempt+1}/5): {e}")
@@ -341,8 +356,16 @@ class DeepSeekText(BaseTextModel):
             try:
                 response = self.client.chat.completions.create(**self._get_kwargs(messages, stream=True))
                 for chunk in response:
-                    if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                        yield chunk.choices[0].delta.content
+                    if not chunk.choices:
+                        continue
+                    delta = chunk.choices[0].delta
+                    if not delta:
+                        continue
+                    # 思考模式：跳过 reasoning_content，只产出 content
+                    if hasattr(delta, 'reasoning_content') and delta.reasoning_content:
+                        continue
+                    if delta.content:
+                        yield delta.content
                 return
             except Exception as e:
                 if attempt < 4:
