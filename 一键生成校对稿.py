@@ -8,7 +8,7 @@ from core.text_engine import DeepSeekText, GeminiText, NvidiaText
 # ============================================================
 
 # 1) 任务文件夹（脚本自动找 .mp3）
-folder_path = Path(r"摩诃止观-定智法师 2017/03正说分第一大意发大心/摩诃止观01正说分/2017年12月25日摩诃止观01正说分第一大意发大心032")
+folder_path = Path(r"摩诃止观-定智法师 2017/03正说分第一大意发大心/摩诃止观03正说分/2017年12月25日摩诃止观03正说分第一大意修大行001")
 
 # 2) 元数据（写入校对稿头部）
 year = "2017"
@@ -19,17 +19,17 @@ asr_model_name = "qwen3-asr-flash-filetrans"
 
 # 4) 文本模型：想换模型只改 SELECTED_MODEL 这一行的 key
 AVAILABLE_MODELS = {
-    "deepseek": (DeepSeekText, {                          # 前3步：长思考
+    "deepseek": (DeepSeekText, {
         "model_name": "deepseek-v4-pro",
         "enable_thinking": True, "reasoning_effort": "max",
     }),
-    "deepseek-fast": (DeepSeekText, {                     # 后2步：无思考
+    "deepseek-fast": (DeepSeekText, {
         "model_name": "deepseek-v4-flash",
-        "enable_thinking": False,
+        "enable_thinking": True,"reasoning_effort": "high",
     }),
 }
 SELECTED_MODEL = "deepseek"
-FAST_SELECTED_MODEL = "deepseek-fast"
+FAST_SELECTED_MODEL = "deepseek"
 
 # 模糊原文种子（首次运行时自动创建 模糊原文.md，此后以文件内容为准）
 reference_text = ""
@@ -45,8 +45,7 @@ text_user_prompt_template = """\
 ## 校对规则：
 修正错别字：结合佛学常识和【原文参考】，纠正同音字和专有术语误识。
 补充标点并根据语义自然分段。
-去掉“嗯”“啊”“呃”“哦”“唉”等语气停顿词。
-去掉“这个这个”“那个那个”等口语过渡词。
+去掉“嗯”“啊”“呃”“哦”“唉”“这个这个”“那个那个”等显得啰嗦的语气词。
 讲解中所有的引经据典（包括引用原文参考），必须用『』括起来。
 ## 重要
 思考逐字稿讲的每一个知识点，然后保证每一个知识点的信息在输出内容中都得到完全的保留。
@@ -71,49 +70,25 @@ verifier_user_prompt_template = """
 【校对稿】{written_text}
 """
 
-# 定位精准原文
-precision_system_prompt = '你是一位严谨的校对员。'
-precision_user_prompt_template = """\
+# 精准定位并提取纯原文（一次调用）
+extract_system_prompt = """你是一位严谨的文献整理员。"""
+extract_user_prompt_template = """\
 ## 背景
-校对稿是一位师父在讲解《摩诃止观辅行传弘决辑注》
-原文大致范围是我估摸着这个校对稿所讲的《摩诃止观辅行传弘决辑注》的大致范围，复制给你看。
-原文大致范围前半部分是正文，后半部分（如果有的话）是对正文的注脚。
+讲稿是一位师父在讲解《摩诃止观辅行传弘决辑注》。
+复制的节选是我估摸着这个讲稿所讲的《摩诃止观辅行传弘决辑注》的大致范围，复制给你看。\
+是docx文档节选复制到markdown文件中得到的文本，可能会有些乱码。
+复制的节选包括四部分，摩诃止观正文（一般被**包裹住了）、摩诃止观科判（一般跟在正文前面）、\
+摩诃止观解释（一般跟在正文后面）、注脚（在整个内容前半标记，在后半罗列注解）
+## 思考
+思考【讲稿】的内容对应在讲解【复制的节选】中**摩诃止观正文**的哪些句子（按顺序）。
 ## 任务
-你的任务是思考【校对稿】的内容对应【原文大致范围】（前半部分），从哪里开始讲，到哪里结束讲解。
-然后输出且仅输出这个开始到结束的内容。
-也就是说，我想要你定位校对稿到底讲解了原文大致范围的哪一段内容。
+把这些摩诃止观正文按顺序直接拼接（不使用换行符等拼接）。
 
-【校对稿】
+【讲稿】
 {written_text}
-【原文大致范围】
+
+【复制的节选】
 {fuzzy_reference_text}
-"""
-
-# 从精准原文中提取纯原文
-extraction_system_prompt = """你是一位严谨的文献整理员。"""
-extraction_user_prompt_template = """\
-## 背景
-所给的文献是《摩诃止观辅行传弘决辑注》的docx文档节选，复制到markdown文件中得到的文本。
-可能会有些乱码。
-## 任务
-请从文献中提取出纯粹的摩诃止观正文输出。
-正文按顺序直接拼接就好，不使用换行符等等。
-一般来说摩诃止观正文被**包裹，例如：**若能如此简非显是，体权识实而发心者，是一切诸佛种。**
-## 举例子
-输入：
-△五约譬广叹二，初约理以明生善灭恶德二，初正释二，初明生善德
-**譬如金刚，从金性生，佛菩提心，从大悲起，是诸行先；如服阿娑罗药，先用清水，诸行中最；如诸根中命根为最，佛正法正行中此心为最；如太子生，具王仪相，大臣恭敬，有大声名；如迦陵频伽鸟，****[****谷****-****禾****+****卵****]****中鸣声**[***\*[1\]\****](#_ftn1)**，已胜诸鸟。**
-譬如下，举十譬叹德，此即约理以叹生善灭恶德也，以菩提心皆依理故。如金刚等五，生善德也。如师子弦等五，灭恶德也。
-...
-△二明灭恶德
-**此菩提心有大势力，如师子筋弦**[***\*[7\]\****](#_ftn7)**；如师子乳**[***\*[8\]\****](#_ftn8)**；如金刚槌；如那罗延箭；具足众宝，能除贫苦，如如意珠。虽小懈怠，小失威仪，犹胜二乘功德。**
-次灭恶中，奏圆教弦，偏弦断绝。奏者，为也，凡为乐音，皆称为奏。
-
-输出：
-譬如金刚，从金性生，佛菩提心，从大悲起，是诸行先；如服阿娑罗药，先用清水，诸行中最；如诸根中命根为最，佛正法正行中此心为最；如太子生，具王仪相，大臣恭敬，有大声名；如迦陵频伽鸟，[谷-禾+卵]中鸣声 ，已胜诸鸟。此菩提心有大势力，如师子筋弦 ；如师子乳 ；如金刚槌；如那罗延箭；具足众宝，能除贫苦，如如意珠。虽小懈怠，小失威仪，犹胜二乘功德。
-
-【文献】
-{precision_text}
 """
 
 if __name__ == "__main__":
@@ -130,8 +105,6 @@ if __name__ == "__main__":
         text_user_prompt_template=text_user_prompt_template,
         verifier_system_prompt=verifier_system_prompt,
         verifier_user_prompt_template=verifier_user_prompt_template,
-        precision_system_prompt=precision_system_prompt,
-        precision_user_prompt_template=precision_user_prompt_template,
-        extraction_system_prompt=extraction_system_prompt,
-        extraction_user_prompt_template=extraction_user_prompt_template,
+        extract_system_prompt=extract_system_prompt,
+        extract_user_prompt_template=extract_user_prompt_template,
     )

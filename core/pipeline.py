@@ -8,7 +8,7 @@ from core.utils import Color
 
 
 class AudioProcessingPipeline:
-    """端到端音频处理流水线：转录 → 校对 → 信息丢失检查 → 精准定位 → 元数据"""
+    """端到端音频处理流水线：转录 → 校对 → 信息丢失检查 → 定位并提取原文 → 元数据"""
 
     def __init__(self, asr_engine, text_engine, fast_text_engine=None):
         self.asr_engine = asr_engine
@@ -22,12 +22,13 @@ class AudioProcessingPipeline:
         minutes, seconds = divmod(remainder, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-    def _save_thinking(self, label: str, parent_dir: Path):
+    def _save_thinking(self, label: str, parent_dir: Path, engine=None):
         """保存思维链内容到文件（若引擎有返回）"""
-        if hasattr(self.text_engine, '_last_reasoning_content') and self.text_engine._last_reasoning_content:
+        eng = engine or self.text_engine
+        if hasattr(eng, '_last_reasoning_content') and eng._last_reasoning_content:
             thinking_path = parent_dir / f"思维链_{label}.md"
-            thinking_path.write_text(self.text_engine._last_reasoning_content, encoding="utf-8")
-            self.text_engine._last_reasoning_content = None  # 消费后清空
+            thinking_path.write_text(eng._last_reasoning_content, encoding="utf-8")
+            eng._last_reasoning_content = None  # 消费后清空
             print(f"{Color.GREEN}🧠 思维链已保存: {thinking_path.name}")
 
     @staticmethod
@@ -64,10 +65,8 @@ class AudioProcessingPipeline:
             text_user_prompt_template="",
             verifier_sys_prompt="",
             verifier_user_prompt_template="",
-            precision_sys_prompt="",
-            precision_user_prompt_template="",
-            extraction_sys_prompt="",
-            extraction_user_prompt_template="",
+            extract_sys_prompt="",
+            extract_user_prompt_template="",
             year="",
             author="",
             reference_text=""):
@@ -180,70 +179,38 @@ class AudioProcessingPipeline:
             print(f"{Color.RED}❌ 检测到信息遗漏，流水线终止。请手动修改校对稿后重新运行。{Color.END}")
             exit(1)
 
-        # 步骤 4: 精准定位原文 (带缓存)
-        precision_text = ""
-        precision_filename = parent_dir / f"{base_name}_精准原文.md"
-        if precision_sys_prompt and precision_user_prompt_template:
-            print(f"\n{Color.DARK_PURPLE}[4/5] 开始精准定位原文...")
-            if precision_filename.exists():
-                print(f"{Color.GREEN}✅ 检测到已存在精准原文，直接复用: {precision_filename.name}")
-                with open(precision_filename, "r", encoding="utf-8") as f:
-                    precision_text = f.read()
-            else:
-                print(f"{Color.DARK_PURPLE}正在根据校对稿定位精准原文范围...")
-                precision_prompt = precision_user_prompt_template.format(
-                    written_text=written_text,
-                    fuzzy_reference_text=fuzzy_reference_text
-                )
-                _t0 = time.time()
-                precision_text = self._fast_engine.generate(precision_sys_prompt, precision_prompt)
-                _elapsed = time.time() - _t0
-                _total_time += _elapsed
-                print(f"{Color.GREEN}⏱️ 精准定位原文模型调用耗时: {self._format_time(_elapsed)}")
-                self._save_thinking("精准定位原文", parent_dir)
-                with open(precision_filename, "w", encoding="utf-8") as f:
-                    f.write(precision_text)
-                print(f"{Color.GREEN}精准原文已保存至: {precision_filename}")
-
-        if precision_text:
-            self._print_head_tail(precision_text, precision_filename.name)
-
-        # 步骤 5: 补充元数据并插入校对稿
-        print(f"\n{Color.DARK_PURPLE}[5/5] 准备补充元数据信息...")
-        with open(final_output_filename, "r", encoding="utf-8") as f:
-            current_written_text = f.read()
-
-        # 模型提取 原文.md（带缓存）
+        # 步骤 4: 精准定位并提取原文 (带缓存)
         origin_txt = parent_dir / "原文.md"
+        print(f"\n{Color.DARK_PURPLE}[4/5] 正在通过模型定位并提取纯原文...")
         if origin_txt.exists():
             print(f"{Color.GREEN}✅ 检测到已存在 {origin_txt.name}，直接复用")
             content_for_print = origin_txt.read_text("utf-8").strip()
             if content_for_print:
                 self._print_head_tail(content_for_print)
-        elif precision_text and extraction_sys_prompt and extraction_user_prompt_template:
-            print(f"\n{Color.DARK_PURPLE}[提取原文] 正在通过模型从精准原文中提取纯原文...")
-            extraction_prompt = extraction_user_prompt_template.format(
-                precision_text=precision_text
+        elif extract_sys_prompt and extract_user_prompt_template:
+            extract_prompt = extract_user_prompt_template.format(
+                written_text=written_text,
+                fuzzy_reference_text=fuzzy_reference_text
             )
             _t0 = time.time()
-            extracted = self._fast_engine.generate(extraction_sys_prompt, extraction_prompt).strip()
+            extracted = self._fast_engine.generate(extract_sys_prompt, extract_prompt).strip()
             _elapsed = time.time() - _t0
             _total_time += _elapsed
-            print(f"{Color.GREEN}⏱️ 提取原文模型调用耗时: {self._format_time(_elapsed)}")
-            self._save_thinking("提取原文", parent_dir)
+            print(f"{Color.GREEN}⏱️ 定位提取原文模型调用耗时: {self._format_time(_elapsed)}")
+            self._save_thinking("定位提取原文", parent_dir, self._fast_engine)
             origin_txt.write_text(extracted, "utf-8")
             print(f"{Color.GREEN}✅ 已通过模型提取原文到 {origin_txt.name}")
             self._print_head_tail(extracted)
-        elif precision_text:
-            # 无提取提示词时，直接使用精准原文全部内容
-            origin_txt.write_text(precision_text, "utf-8")
-            print(f"{Color.GREEN}已将精准原文直接写入 {origin_txt.name}")
-            self._print_head_tail(precision_text)
         else:
             origin_txt.write_text("", "utf-8")
             print(f"{Color.GREEN}已创建空的 {origin_txt}")
 
         print(f"{Color.GREEN}⏱️ 本次全部模型调用总耗时: {self._format_time(_total_time)}")
+
+        # 步骤 5: 补充元数据并插入校对稿
+        print(f"\n{Color.DARK_PURPLE}[5/5] 准备补充元数据信息...")
+        with open(final_output_filename, "r", encoding="utf-8") as f:
+            current_written_text = f.read()
 
         if current_written_text.strip().startswith("> 标题："):
             print(f"{Color.GREEN}✅ 检测到校对稿已包含元数据，跳过元数据。")
@@ -274,8 +241,6 @@ class AudioProcessingPipeline:
         print(f"💡 最终文件列表：")
         print(f"  - 逐字稿: {transcript_filename.name}")
         print(f"  - 校对稿: {final_output_filename.name}")
-        if precision_text:
-            print(f"  - 精准原文: {precision_filename.name}")
         print(f"  - 检查报告: {verification_filename.name}")
         print(f"===========================================\n")
 
@@ -284,8 +249,7 @@ def run(*, folder_path, year, author, reference_text, asr_model_name,
         available_models, selected_model, fast_selected_model=None,
         text_system_prompt, text_user_prompt_template,
         verifier_system_prompt, verifier_user_prompt_template,
-        precision_system_prompt="", precision_user_prompt_template="",
-        extraction_system_prompt="", extraction_user_prompt_template=""):
+        extract_system_prompt="", extract_user_prompt_template=""):
     """执行完整流水线：文件发现 → 引擎初始化 → 运行"""
 
     if not folder_path.exists():
@@ -336,10 +300,8 @@ def run(*, folder_path, year, author, reference_text, asr_model_name,
         text_user_prompt_template=text_user_prompt_template,
         verifier_sys_prompt=verifier_system_prompt,
         verifier_user_prompt_template=verifier_user_prompt_template,
-        precision_sys_prompt=precision_system_prompt,
-        precision_user_prompt_template=precision_user_prompt_template,
-        extraction_sys_prompt=extraction_system_prompt,
-        extraction_user_prompt_template=extraction_user_prompt_template,
+        extract_sys_prompt=extract_system_prompt,
+        extract_user_prompt_template=extract_user_prompt_template,
         year=year,
         author=author,
         reference_text=reference_text
