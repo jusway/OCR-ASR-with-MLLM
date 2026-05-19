@@ -9,7 +9,7 @@ from core.utils import Color
 
 
 class AudioProcessingPipeline:
-    """端到端音频处理流水线：转录 → 校对 → 信息丢失检查 → 定位并提取原文 → 元数据"""
+    """端到端音频处理流水线：转录 → 覆盖度检查 → 校对 → 信息丢失检查 → 定位并提取原文 → 元数据"""
 
     def __init__(self, asr_engine, text_engine, fast_text_engine=None):
         self.asr_engine = asr_engine
@@ -58,6 +58,8 @@ class AudioProcessingPipeline:
     def run(self,
             audio_path,
             fuzzy_reference_text="",
+            coverage_sys_prompt="",
+            coverage_user_prompt_template="",
             text_sys_prompt="",
             text_user_prompt_template="",
             verifier_sys_prompt="",
@@ -110,7 +112,31 @@ class AudioProcessingPipeline:
                 f.write(transcript_text)
             print(f"{Color.GREEN}逐字稿已保存至: {transcript_filename}")
 
-        # 步骤 2+3: 校对 + 信息检查（共享重试，最多 3 次）
+        # 步骤 2: 覆盖度检查（检查模糊原文是否全面覆盖逐字稿）
+        print(f"\n{Color.DARK_PURPLE}[2/6] 开始检查原文覆盖度...")
+        if coverage_sys_prompt and coverage_user_prompt_template:
+            coverage_prompt = coverage_user_prompt_template.format(
+                transcript_text=transcript_text,
+                fuzzy_reference_text=fuzzy_reference_text
+            )
+            _t0 = time.time()
+            coverage_result = self._fast_engine.generate(coverage_sys_prompt, coverage_prompt)
+            _elapsed = time.time() - _t0
+            _total_time += _elapsed
+            print(f"{Color.GREEN}⏱️ 覆盖度检查模型调用耗时: {self._format_time(_elapsed)}")
+            self._save_thinking("覆盖度检查", parent_dir, self._fast_engine)
+
+            print(f"{Color.ORANGE}--- 覆盖度检查结果 ---")
+            print(coverage_result)
+            print(f"{Color.ORANGE}------------------------")
+
+            if "【已覆盖】" not in coverage_result:
+                print(f"{Color.RED}❌ 模糊原文未全面覆盖逐字稿内容，请补充模糊原文后重新运行。{Color.END}")
+                exit(1)
+            else:
+                print(f"{Color.GREEN}✅ 模糊原文已全面覆盖逐字稿内容")
+
+        # 步骤 3+4: 校对 + 信息检查（共享重试，最多 3 次）
         _retry_left = 3
         _attempt = 0
         while _attempt < _retry_left:
@@ -125,7 +151,7 @@ class AudioProcessingPipeline:
                 print(f"{'=' * 50}{Color.END}")
 
             # 步骤 2: 校对稿
-            print(f"\n{Color.DARK_PURPLE}[2/5] 开始处理校对稿...")
+            print(f"\n{Color.DARK_PURPLE}[3/6] 开始处理校对稿...")
             # 查找是否有任意浓缩率的缓存校对稿
             existing = list(parent_dir.glob(f"{base_name}_校对稿_*.md"))
             if existing:
@@ -170,7 +196,7 @@ class AudioProcessingPipeline:
                 continue  # 回到 while 循环开头重试
 
             # 步骤 3: 信息丢失检查
-            print(f"\n{Color.DARK_PURPLE}[3/5] 开始检查信息丢失情况...")
+            print(f"\n{Color.DARK_PURPLE}[4/6] 开始检查信息丢失情况...")
             cached = list(parent_dir.glob("丢失信息检查_*.md"))
             if cached:
                 verification_filename = cached[0]
@@ -184,11 +210,11 @@ class AudioProcessingPipeline:
                 )
 
                 _t0 = time.time()
-                verification_report = self.text_engine.generate(verifier_sys_prompt, verifier_user_prompt)
+                verification_report = self._fast_engine.generate(verifier_sys_prompt, verifier_user_prompt)
                 _elapsed = time.time() - _t0
                 _total_time += _elapsed
                 print(f"{Color.GREEN}⏱️ 信息丢失检查模型调用耗时: {self._format_time(_elapsed)}")
-                self._save_thinking("信息丢失检查", parent_dir)
+                self._save_thinking("信息丢失检查", parent_dir, self._fast_engine)
                 has_loss = "【无遗漏信息】" not in verification_report
                 tag = "有遗漏" if has_loss else "无遗漏"
                 verification_filename = parent_dir / f"丢失信息检查_{tag}.md"
@@ -223,7 +249,7 @@ class AudioProcessingPipeline:
 
         # 步骤 4: 精准定位并提取原文 (带缓存)
         origin_txt = parent_dir / "原文.md"
-        print(f"\n{Color.DARK_PURPLE}[4/5] 正在通过模型定位并提取纯原文...")
+        print(f"\n{Color.DARK_PURPLE}[5/6] 正在通过模型定位并提取纯原文...")
         if origin_txt.exists():
             print(f"{Color.GREEN}✅ 检测到已存在 {origin_txt.name}，直接复用")
             content_for_print = origin_txt.read_text("utf-8").strip()
@@ -250,7 +276,7 @@ class AudioProcessingPipeline:
         print(f"{Color.GREEN}⏱️ 本次全部模型调用总耗时: {self._format_time(_total_time)}")
 
         # 步骤 5: 补充元数据并插入校对稿
-        print(f"\n{Color.DARK_PURPLE}[5/5] 准备补充元数据信息...")
+        print(f"\n{Color.DARK_PURPLE}[6/6] 准备补充元数据信息...")
         with open(final_output_filename, "r", encoding="utf-8") as f:
             current_written_text = f.read()
 
@@ -332,6 +358,7 @@ class BatchTranscriptionPipeline:
 
 def run(*, folder_path, year, author, reference_text, asr_model_name,
         available_models, selected_model, fast_selected_model=None,
+        coverage_system_prompt="", coverage_user_prompt_template="",
         text_system_prompt, text_user_prompt_template,
         verifier_system_prompt, verifier_user_prompt_template,
         extract_system_prompt="", extract_user_prompt_template="",
@@ -382,6 +409,8 @@ def run(*, folder_path, year, author, reference_text, asr_model_name,
     pipeline.run(
         audio_path=audio_path,
         fuzzy_reference_text=reference_text,
+        coverage_sys_prompt=coverage_system_prompt,
+        coverage_user_prompt_template=coverage_user_prompt_template,
         text_sys_prompt=text_system_prompt,
         text_user_prompt_template=text_user_prompt_template,
         verifier_sys_prompt=verifier_system_prompt,

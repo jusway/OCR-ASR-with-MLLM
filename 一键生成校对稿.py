@@ -8,7 +8,7 @@ from core.text_engine import DeepSeekText, GeminiText, NvidiaText
 # ============================================================
 
 # 1) 任务文件夹（脚本自动找 .mp3）
-folder_path = Path(r"摩诃止观-定智法师 2017/03正说分第一大意发大心/摩诃止观03正说分/2018年1月19日摩诃止观03正说分第一大意修大行007")
+folder_path = Path(r"摩诃止观-定智法师 2017/03正说分第一大意发大心/摩诃止观03正说分/2018年1月19日摩诃止观03正说分第一大意修大行008")
 
 # 2) 元数据（写入校对稿头部）
 year = "2018"
@@ -19,11 +19,11 @@ asr_model_name = "qwen3-asr-flash-filetrans"
 
 # 4) 文本模型：想换模型只改 SELECTED_MODEL 这一行的 key
 AVAILABLE_MODELS = {
-    "deepseek-max": (DeepSeekText, {
+    "deepseek-max": (DeepSeekText, {                          # 步骤 2：长思考
         "model_name": "deepseek-v4-pro",
         "enable_thinking": True, "reasoning_effort": "max",
     }),
-    "deepseek-high": (DeepSeekText, {
+    "deepseek-high": (DeepSeekText, {                         # 步骤 3/4：短思考
         "model_name": "deepseek-v4-pro",
         "enable_thinking": True, "reasoning_effort": "high",
     }),
@@ -33,7 +33,7 @@ AVAILABLE_MODELS = {
     }),
 }
 SELECTED_MODEL = "deepseek-max"
-FAST_SELECTED_MODEL = "deepseek-max"
+FAST_SELECTED_MODEL = "deepseek-high"
 
 # 模糊原文种子（首次运行时自动创建 模糊原文.md，此后以文件内容为准）
 reference_text = ""
@@ -41,6 +41,24 @@ reference_text = ""
 # 优秀案例（从 优秀案例.md 读取，作为 one-shot 示例拼接在逐字稿前）
 example_path = Path("优秀案例.md")
 example_text = example_path.read_text("utf-8").strip() if example_path.exists() else ""
+
+# 覆盖度检查：判断模糊原文是否全面覆盖逐字稿内容
+coverage_system_prompt = """\
+你是一位严谨的审核员。你擅长对比两份文本，判断参考材料是否完整覆盖了录音稿件的全部内容。
+而且你习惯输出只输出结论，不说一点多余的话。"""
+coverage_user_prompt_template = """\
+【录音稿件】
+{transcript_text}
+【原文参考】
+{fuzzy_reference_text}
+## 背景
+【录音稿件】是一位师父在讲解《摩诃止观辅行传弘决辑注》的记录。
+【原文参考】是这位师父本次讲解的《摩诃止观辅行传弘决辑注》的大致原文范围，供参考。
+## 任务
+判断【原文参考】是否全面覆盖了【录音稿件】所讲。（如果原文参考没有覆盖录音稿件，我将会增大原文参考的范围，直到完全覆盖录音稿件所讲解的内容）
+如果没有完全覆盖，请指出缺失了什么。
+如果完全覆盖，直接输出“【已覆盖】”。
+"""
 
 # 录音稿件+大致原文=得到校对稿
 text_system_prompt = """\
@@ -109,6 +127,8 @@ if __name__ == "__main__":
         available_models=AVAILABLE_MODELS,
         selected_model=SELECTED_MODEL,
         fast_selected_model=FAST_SELECTED_MODEL,
+        coverage_system_prompt=coverage_system_prompt,
+        coverage_user_prompt_template=coverage_user_prompt_template,
         text_system_prompt=text_system_prompt,
         text_user_prompt_template=text_user_prompt_template,
         verifier_system_prompt=verifier_system_prompt,
