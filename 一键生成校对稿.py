@@ -8,7 +8,7 @@ from core.text_engine import DeepSeekText, GeminiText, NvidiaText
 # ============================================================
 
 # 1) 任务文件夹（脚本自动找 .mp3）
-folder_path = Path(r"摩诃止观-定智法师 2017/03正说分第一大意发大心/摩诃止观03正说分/2018年1月17日摩诃止观03正说分第一大意修大行006")
+folder_path = Path(r"摩诃止观-定智法师 2017/03正说分第一大意发大心/摩诃止观03正说分/2018年1月19日摩诃止观03正说分第一大意修大行007")
 
 # 2) 元数据（写入校对稿头部）
 year = "2018"
@@ -22,43 +22,48 @@ AVAILABLE_MODELS = {
     "deepseek-max": (DeepSeekText, {
         "model_name": "deepseek-v4-pro",
         "enable_thinking": True, "reasoning_effort": "max",
-        "max_tokens": 32000,
     }),
     "deepseek-high": (DeepSeekText, {
         "model_name": "deepseek-v4-pro",
         "enable_thinking": True, "reasoning_effort": "high",
-        "max_tokens": 32000,
     }),
     "deepseek-fast": (DeepSeekText, {
         "model_name": "deepseek-v4-flash",
         "enable_thinking": True,"reasoning_effort": "high",
-        "max_tokens": 32000,
     }),
 }
-SELECTED_MODEL = "deepseek-high"
-FAST_SELECTED_MODEL = "deepseek-fast"
+SELECTED_MODEL = "deepseek-max"
+FAST_SELECTED_MODEL = "deepseek-max"
 
 # 模糊原文种子（首次运行时自动创建 模糊原文.md，此后以文件内容为准）
 reference_text = ""
+
+# 优秀案例（从 优秀案例.md 读取，作为 one-shot 示例拼接在逐字稿前）
+example_path = Path("优秀案例.md")
+example_text = example_path.read_text("utf-8").strip() if example_path.exists() else ""
 
 # 录音稿件+大致原文=得到校对稿
 text_system_prompt = """\
 你是一位编辑。你擅长把录音稿件整理成井井有条的校对稿，而且不会丢失任何的信息。这一点一直是你的骄傲。
 而且你习惯输出只输出内容，不说一点多余的话。"""
 text_user_prompt_template = """\
+【优秀案例】
+{example_text}
 【原文参考】
 {fuzzy_reference_text}
 【录音稿件】
 {transcript_text}
 ## 背景
-录音稿件是一位师父在讲解《摩诃止观辅行传弘决辑注》的记录。
-原文参考是这位师父讲解的《摩诃止观辅行传弘决辑注》的大致原文范围，供你参考。
+【录音稿件】是一位师父在讲解《摩诃止观辅行传弘决辑注》的记录。
+【原文参考】是这位师父讲解的《摩诃止观辅行传弘决辑注》的大致原文范围，供你参考。
 ## 任务
-校对录音稿件。
+请按照【优秀案例】的风格和详细程度校对【录音稿件】。
 """
 
 # 信息丢失检查提示词
-verifier_system_prompt = """你是一位编辑。你擅长对照录音稿件和校对稿，进行审核工作。"""
+verifier_system_prompt = """\
+你是一位编辑。你擅长对照录音稿件和校对稿，进行审核工作。
+而且你要求非常严格，这一点一直是你的骄傲。"""
 verifier_user_prompt_template = """
 【录音稿件】
 {transcript_text}
@@ -110,4 +115,5 @@ if __name__ == "__main__":
         verifier_user_prompt_template=verifier_user_prompt_template,
         extract_system_prompt=extract_system_prompt,
         extract_user_prompt_template=extract_user_prompt_template,
+        example_text=example_text,
     )

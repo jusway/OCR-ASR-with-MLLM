@@ -1,4 +1,5 @@
 import re
+import shutil
 import time
 from pathlib import Path
 from pydub import AudioSegment
@@ -63,6 +64,7 @@ class AudioProcessingPipeline:
             verifier_user_prompt_template="",
             extract_sys_prompt="",
             extract_user_prompt_template="",
+            example_text="",
             year="",
             author="",
             reference_text=""):
@@ -108,22 +110,35 @@ class AudioProcessingPipeline:
                 f.write(transcript_text)
             print(f"{Color.GREEN}逐字稿已保存至: {transcript_filename}")
 
-        # 步骤 2: 整理为校对稿 (带缓存)
-        print(f"\n{Color.DARK_PURPLE}[2/5] 开始处理校对稿...")
-        if final_output_filename.exists():
-            print(f"{Color.GREEN}✅ 检测到已存在校对稿，直接复用: {final_output_filename.name}")
-            with open(final_output_filename, "r", encoding="utf-8") as f:
-                written_text = f.read()
-        else:
-            print(f"{Color.DARK_PURPLE}正在使用 {self.text_engine.model_name} 将逐字稿整理为校对稿，请耐心等待...")
-            user_prompt = text_user_prompt_template.format(
-                fuzzy_reference_text=fuzzy_reference_text,
-                transcript_text=transcript_text
-            )
+        # 步骤 2+3: 校对 + 信息检查（共享重试，最多 3 次）
+        _retry_left = 3
+        _attempt = 0
+        while _attempt < _retry_left:
+            if _attempt > 0:
+                # 重试时清除缓存，强制从头重新生成
+                for f in parent_dir.glob(f"{base_name}_校对稿_*.md"):
+                    f.unlink()
+                for f in parent_dir.glob("丢失信息检查_*.md"):
+                    f.unlink()
+                print(f"{Color.RED}{'=' * 50}")
+                print(f"⏳ 第 {_attempt+1} 次重试...")
+                print(f"{'=' * 50}{Color.END}")
 
-            # 调用模型 + 自动重试（当浓缩率异常低时）
-            min_ratio = 0.50
-            for retry in range(3):
+            # 步骤 2: 校对稿
+            print(f"\n{Color.DARK_PURPLE}[2/5] 开始处理校对稿...")
+            # 查找是否有任意浓缩率的缓存校对稿
+            existing = list(parent_dir.glob(f"{base_name}_校对稿_*.md"))
+            if existing:
+                final_output_filename = existing[0]
+                print(f"{Color.GREEN}✅ 检测到已存在校对稿，直接复用: {final_output_filename.name}")
+                written_text = final_output_filename.read_text("utf-8")
+            else:
+                print(f"{Color.DARK_PURPLE}正在使用 {self.text_engine.model_name} 将逐字稿整理为校对稿，请耐心等待...")
+                user_prompt = text_user_prompt_template.format(
+                    fuzzy_reference_text=fuzzy_reference_text,
+                    transcript_text=transcript_text,
+                    example_text=example_text,
+                )
                 _t0 = time.time()
                 written_text = self.text_engine.generate(text_sys_prompt, user_prompt)
                 _elapsed = time.time() - _t0
@@ -131,59 +146,80 @@ class AudioProcessingPipeline:
                 print(f"{Color.GREEN}⏱️ 校对稿模型调用耗时: {self._format_time(_elapsed)}")
                 self._save_thinking("校对", parent_dir)
 
-                ratio = len(written_text) / len(transcript_text) if transcript_text else 1.0
-                if ratio >= min_ratio:
-                    break
-                print(f"{Color.ORANGE}⚠️ 浓缩率 {ratio:.1%} 低于 {min_ratio:.0%}，正在重试 ({retry+1}/3)...{Color.END}")
-                # 重试时在 prompt 末尾追加约束
-                user_prompt += "\n\n【重要】上次输出的内容太短了，丢失了大量信息，这次请务必完整输出原文的全部内容，不要压缩。"
+                # 先写入无后缀版本，等计算出浓缩率后再改名
+                final_output_filename.write_text(written_text, "utf-8")
 
-            with open(final_output_filename, "w", encoding="utf-8") as f:
-                f.write(written_text)
-            print(f"{Color.GREEN}校对稿已保存至: {final_output_filename}")
+            # 给校对稿文件名加上浓缩率后缀
+            transcript_len = len(transcript_text)
+            written_len = len(written_text)
+            ratio = (written_len / transcript_len * 100) if transcript_len > 0 else 0.0
+            print(f"{Color.ORANGE}📊 字数统计：校对稿 {written_len} / 逐字稿 {transcript_len} = {ratio:.1f}%")
 
-        # 步骤 3: 信息丢失检查 (带缓存)
-        print(f"\n{Color.DARK_PURPLE}[3/5] 开始检查信息丢失情况...")
+            ratio_filename = parent_dir / f"{base_name}_校对稿_{ratio:.1f}%.md"
+            if final_output_filename != ratio_filename and final_output_filename.exists():
+                final_output_filename.rename(ratio_filename)
+                final_output_filename = ratio_filename
+                print(f"{Color.GREEN}校对稿已保存至: {final_output_filename.name}")
 
-        transcript_len = len(transcript_text)
-        written_len = len(written_text)
-        ratio = (written_len / transcript_len * 100) if transcript_len > 0 else 0.0
-        print(f"{Color.ORANGE}📊 字数统计：校对稿 {written_len} / 逐字稿 {transcript_len} = {ratio:.1f}%")
+            if ratio < 50.0:
+                print(f"{Color.ORANGE}⚠️ 浓缩率 {ratio:.1f}% 低于 50%，跳过信息丢失检查直接重试...{Color.END}")
+                _attempt += 1
+                if _attempt >= _retry_left:
+                    print(f"{Color.RED}❌ 经 {_retry_left} 次尝试浓缩率仍低于 50%。流水线终止。{Color.END}")
+                    exit(1)
+                continue  # 回到 while 循环开头重试
 
-        cached = list(parent_dir.glob(f"丢失信息检查_*.md"))
-        if cached:
-            verification_filename = cached[0]
-            print(f"{Color.GREEN}✅ 检测到已存在检查报告，直接复用: {verification_filename.name}")
-            verification_report = verification_filename.read_text("utf-8")
-        else:
-            print(f"{Color.DARK_PURPLE}正在对比逐字稿与校对稿，检查是否有关键信息丢失...")
-            verifier_user_prompt = verifier_user_prompt_template.format(
-                transcript_text=transcript_text,
-                written_text=written_text,
-            )
+            # 步骤 3: 信息丢失检查
+            print(f"\n{Color.DARK_PURPLE}[3/5] 开始检查信息丢失情况...")
+            cached = list(parent_dir.glob("丢失信息检查_*.md"))
+            if cached:
+                verification_filename = cached[0]
+                print(f"{Color.GREEN}✅ 检测到已存在检查报告，直接复用: {verification_filename.name}")
+                verification_report = verification_filename.read_text("utf-8")
+            else:
+                print(f"{Color.DARK_PURPLE}正在对比逐字稿与校对稿，检查是否有关键信息丢失...")
+                verifier_user_prompt = verifier_user_prompt_template.format(
+                    transcript_text=transcript_text,
+                    written_text=written_text,
+                )
 
-            _t0 = time.time()
-            verification_report = self.text_engine.generate(verifier_sys_prompt, verifier_user_prompt)
-            _elapsed = time.time() - _t0
-            _total_time += _elapsed
-            print(f"{Color.GREEN}⏱️ 信息丢失检查模型调用耗时: {self._format_time(_elapsed)}")
-            self._save_thinking("信息丢失检查", parent_dir)
-            has_loss = "【无遗漏信息】" not in verification_report
-            tag = "有遗漏" if has_loss else "无遗漏"
-            verification_filename = parent_dir / f"丢失信息检查_{tag}.md"
-            verification_filename.write_text(verification_report, "utf-8")
-            print(f"{Color.GREEN}检查报告已保存至: {verification_filename}（{tag}）")
+                _t0 = time.time()
+                verification_report = self.text_engine.generate(verifier_sys_prompt, verifier_user_prompt)
+                _elapsed = time.time() - _t0
+                _total_time += _elapsed
+                print(f"{Color.GREEN}⏱️ 信息丢失检查模型调用耗时: {self._format_time(_elapsed)}")
+                self._save_thinking("信息丢失检查", parent_dir)
+                has_loss = "【无遗漏信息】" not in verification_report
+                tag = "有遗漏" if has_loss else "无遗漏"
+                verification_filename = parent_dir / f"丢失信息检查_{tag}.md"
+                verification_filename.write_text(verification_report, "utf-8")
+                print(f"{Color.GREEN}检查报告已保存至: {verification_filename}（{tag}）")
 
-        print(f"{Color.ORANGE}--- 信息丢失检查报告摘要 ---")
-        print("\n".join(verification_report.split("\n")[:10]))
-        if len(verification_report.split("\n")) > 10:
-            print("...")
-        print(f"{Color.ORANGE}----------------------------")
+            print(f"{Color.ORANGE}--- 信息丢失检查报告摘要 ---")
+            print("\n".join(verification_report.split("\n")[:10]))
+            if len(verification_report.split("\n")) > 10:
+                print("...")
+            print(f"{Color.ORANGE}----------------------------")
 
-        # 有遗漏信息则终止流水线
-        if "【无遗漏信息】" not in verification_report:
-            print(f"{Color.RED}❌ 检测到信息遗漏，流水线终止。请手动修改校对稿后重新运行。{Color.END}")
-            exit(1)
+            if "【无遗漏信息】" in verification_report:
+                break  # 全部通过，跳出重试循环
+
+            # 浓缩率达标但有遗漏：归档当前文件后重试
+            print(f"{Color.ORANGE}⚠️ 浓缩率达标但检测到信息遗漏，归档本次生成的文件后重试...{Color.END}")
+            archive_dir = parent_dir / "遗漏记录" / base_name
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            # 拷贝校对稿
+            shutil.copy2(final_output_filename, archive_dir / final_output_filename.name)
+            # 移动检查报告（下次重试会生成新的）
+            for f in parent_dir.glob("丢失信息检查_*.md"):
+                shutil.copy2(f, archive_dir / f.name)
+                f.unlink()  # 删掉原文件，避免下次重试时缓存命中
+            print(f"{Color.GREEN}✅ 已归档至: {archive_dir}")
+
+            _attempt += 1
+            if _attempt >= _retry_left:
+                print(f"{Color.RED}❌ 经 {_retry_left} 次尝试信息仍有遗漏。流水线终止。{Color.END}")
+                exit(1)
 
         # 步骤 4: 精准定位并提取原文 (带缓存)
         origin_txt = parent_dir / "原文.md"
@@ -298,7 +334,8 @@ def run(*, folder_path, year, author, reference_text, asr_model_name,
         available_models, selected_model, fast_selected_model=None,
         text_system_prompt, text_user_prompt_template,
         verifier_system_prompt, verifier_user_prompt_template,
-        extract_system_prompt="", extract_user_prompt_template=""):
+        extract_system_prompt="", extract_user_prompt_template="",
+        example_text=""):
     """执行完整流水线：文件发现 → 引擎初始化 → 运行"""
 
     if not folder_path.exists():
@@ -351,6 +388,7 @@ def run(*, folder_path, year, author, reference_text, asr_model_name,
         verifier_user_prompt_template=verifier_user_prompt_template,
         extract_sys_prompt=extract_system_prompt,
         extract_user_prompt_template=extract_user_prompt_template,
+        example_text=example_text,
         year=year,
         author=author,
         reference_text=reference_text
