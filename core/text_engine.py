@@ -298,11 +298,12 @@ class DeepSeekText(BaseTextModel):
     支持 reasoning_effort 参数控制思考深度。
     """
     def __init__(self, model_name: str = "deepseek-v4-pro", temperature: float = 1.0, top_p: float = 0.95,
-                 enable_thinking: bool = False, reasoning_effort: str = "high"):
+                 enable_thinking: bool = False, reasoning_effort: str = "high", max_tokens: int = 0):
         super().__init__(model_name, temperature, top_p)
         self.api_key = os.getenv("DEEPSEEK_API_KEY")
         self.enable_thinking = enable_thinking
         self.reasoning_effort = reasoning_effort
+        self.max_tokens = max_tokens
         self._last_reasoning_content = None
         if not self.api_key:
             raise ValueError("未找到 DEEPSEEK_API_KEY，请设置环境变量。")
@@ -318,6 +319,8 @@ class DeepSeekText(BaseTextModel):
             "messages": messages,
             "stream": stream
         }
+        if self.max_tokens > 0:
+            kwargs["max_tokens"] = self.max_tokens
         if self.enable_thinking:
             # 思考模式下 temperature / top_p 不生效，不传更干净
             kwargs["reasoning_effort"] = self.reasoning_effort

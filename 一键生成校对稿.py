@@ -8,7 +8,7 @@ from core.text_engine import DeepSeekText, GeminiText, NvidiaText
 # ============================================================
 
 # 1) 任务文件夹（脚本自动找 .mp3）
-folder_path = Path(r"摩诃止观-定智法师 2017/03正说分第一大意发大心/摩诃止观03正说分/2018年1月15日摩诃止观03正说分第一大意修大行002")
+folder_path = Path(r"摩诃止观-定智法师 2017/03正说分第一大意发大心/摩诃止观03正说分/2018年1月17日摩诃止观03正说分第一大意修大行006")
 
 # 2) 元数据（写入校对稿头部）
 year = "2018"
@@ -19,59 +19,58 @@ asr_model_name = "qwen3-asr-flash-filetrans"
 
 # 4) 文本模型：想换模型只改 SELECTED_MODEL 这一行的 key
 AVAILABLE_MODELS = {
-    "deepseek": (DeepSeekText, {
+    "deepseek-max": (DeepSeekText, {
         "model_name": "deepseek-v4-pro",
         "enable_thinking": True, "reasoning_effort": "max",
+        "max_tokens": 32000,
+    }),
+    "deepseek-high": (DeepSeekText, {
+        "model_name": "deepseek-v4-pro",
+        "enable_thinking": True, "reasoning_effort": "high",
+        "max_tokens": 32000,
     }),
     "deepseek-fast": (DeepSeekText, {
         "model_name": "deepseek-v4-flash",
         "enable_thinking": True,"reasoning_effort": "high",
+        "max_tokens": 32000,
     }),
 }
-SELECTED_MODEL = "deepseek"
-FAST_SELECTED_MODEL = "deepseek"
+SELECTED_MODEL = "deepseek-high"
+FAST_SELECTED_MODEL = "deepseek-fast"
 
 # 模糊原文种子（首次运行时自动创建 模糊原文.md，此后以文件内容为准）
 reference_text = ""
 
-# 逐字稿+大致原文=得到校对稿
-text_system_prompt = '你是一位严谨的校对员。'
+# 录音稿件+大致原文=得到校对稿
+text_system_prompt = """\
+你是一位编辑。你擅长把录音稿件整理成井井有条的校对稿，而且不会丢失任何的信息。这一点一直是你的骄傲。
+而且你习惯输出只输出内容，不说一点多余的话。"""
 text_user_prompt_template = """\
-## 背景
-逐字稿是一位师父在讲解《摩诃止观辅行传弘决辑注》的记录，有很多转录错别字和专有术语误识等问题。
-原文参考是我复制给你的，这位师父讲解的《摩诃止观辅行传弘决辑注》的大致范围。
-
-## 任务：校对逐字稿
-结合佛学常识和【原文参考】，纠正转录错别字和专有术语误识等问题。
-去掉“嗯”“啊”“呃”“哦”“唉”“这个这个”“那个那个”等显得啰嗦的语气词。
-逐字稿所讲的每一点信息（引用、解释、比喻、举例子等等），在输出内容中都要得到完全的保留。
-
-## 输出格式
-所有的引经据典（包括引用原文参考），必须用『』括起来。
-根据语义自然分段。
-
 【原文参考】
 {fuzzy_reference_text}
-
-【逐字稿】
-{transcript_text}"""
+【录音稿件】
+{transcript_text}
+## 背景
+录音稿件是一位师父在讲解《摩诃止观辅行传弘决辑注》的记录。
+原文参考是这位师父讲解的《摩诃止观辅行传弘决辑注》的大致原文范围，供你参考。
+## 任务
+校对录音稿件。
+"""
 
 # 信息丢失检查提示词
-verifier_system_prompt = """你是一位非常苛刻的校对专家"""
+verifier_system_prompt = """你是一位编辑。你擅长对照录音稿件和校对稿，进行审核工作。"""
 verifier_user_prompt_template = """
-## 背景
-逐字稿是一位师父在讲解《摩诃止观辅行传弘决辑注》的录音转录得到的。
-校对稿是对逐字稿进行校对得到的，包括修改错别字、专有名词校对、去掉语气词等等。
-## 任务
-判断逐字稿所讲的每一点信息（引用、解释、比喻、举例子等等），在校对稿中是不是得到了完全的保留。
-如果确认没有遗漏信息，直接输出“【无遗漏信息】”。
-如果有遗漏，请详细解释遗漏了什么。
-
-【逐字稿】
+【录音稿件】
 {transcript_text}
-
 【校对稿】
 {written_text}
+## 背景
+录音稿件是一位师父在讲解《摩诃止观辅行传弘决辑注》的记录。
+校对稿是对录音稿件进行校对得到的。
+## 任务
+判断录音稿件的信息，是否被校对稿遗漏了。
+如果确认没有遗漏信息，直接输出“【无遗漏信息】”。
+如果有遗漏，请详细解释遗漏了什么。
 """
 
 # 精准定位并提取纯原文（一次调用）

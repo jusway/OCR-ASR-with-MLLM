@@ -47,16 +47,12 @@ class AudioProcessingPipeline:
         sents = [s.strip() for s in sents if s.strip()]
         if not sents:
             return
-        first_two = sents[:2]
-        last_two = sents[-2:]
-        if first_two:
+        if sents:
             print(f"{Color.ORANGE}📄 {label} 前两句：")
-            for s in first_two:
-                print(f"  {s}")
-        if last_two:
-            print(f"{Color.ORANGE}📄 {label} 最后两句：")
-            for s in last_two:
-                print(f"  {s}")
+            print(f"  {''.join(sents[:2])}")
+            if len(sents) > 2:
+                print(f"{Color.ORANGE}📄 {label} 最后两句：")
+                print(f"  {''.join(sents[-2:])}")
 
     def run(self,
             audio_path,
@@ -125,12 +121,22 @@ class AudioProcessingPipeline:
                 transcript_text=transcript_text
             )
 
-            _t0 = time.time()
-            written_text = self.text_engine.generate(text_sys_prompt, user_prompt)
-            _elapsed = time.time() - _t0
-            _total_time += _elapsed
-            print(f"{Color.GREEN}⏱️ 校对稿模型调用耗时: {self._format_time(_elapsed)}")
-            self._save_thinking("校对", parent_dir)
+            # 调用模型 + 自动重试（当浓缩率异常低时）
+            min_ratio = 0.50
+            for retry in range(3):
+                _t0 = time.time()
+                written_text = self.text_engine.generate(text_sys_prompt, user_prompt)
+                _elapsed = time.time() - _t0
+                _total_time += _elapsed
+                print(f"{Color.GREEN}⏱️ 校对稿模型调用耗时: {self._format_time(_elapsed)}")
+                self._save_thinking("校对", parent_dir)
+
+                ratio = len(written_text) / len(transcript_text) if transcript_text else 1.0
+                if ratio >= min_ratio:
+                    break
+                print(f"{Color.ORANGE}⚠️ 浓缩率 {ratio:.1%} 低于 {min_ratio:.0%}，正在重试 ({retry+1}/3)...{Color.END}")
+                # 重试时在 prompt 末尾追加约束
+                user_prompt += "\n\n【重要】上次输出的内容太短了，丢失了大量信息，这次请务必完整输出原文的全部内容，不要压缩。"
 
             with open(final_output_filename, "w", encoding="utf-8") as f:
                 f.write(written_text)
