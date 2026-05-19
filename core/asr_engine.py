@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import json
 import uuid
@@ -143,6 +144,79 @@ class Qwen3ASRFlashFiletrans(BaseASR):
             # 清理可能生成的临时压缩文件
             if is_temp and processed_audio_path and os.path.exists(processed_audio_path):
                 os.remove(processed_audio_path)
+
+
+class MiMoLocalASR(BaseASR):
+    """
+    使用本地运行的 MiMo-V2.5-ASR 模型进行语音识别。
+
+    调用本地 HTTP 服务，默认地址 http://127.0.0.1:8000
+    支持语言提示标签 <chinese> / <english>。
+    自动将 Windows 绝对路径转换为 WSL 路径（如 D:\path → /mnt/d/path）。
+    """
+
+    @staticmethod
+    def _to_wsl_path(windows_path: str) -> str:
+        """将 Windows 绝对路径转换为 WSL 路径"""
+        if not windows_path:
+            return windows_path
+        path = windows_path.replace("\\", "/")
+        path = re.sub(r'^([A-Za-z]):', lambda m: f"/mnt/{m.group(1).lower()}", path)
+        return path
+
+    def __init__(self, base_url: str = "http://127.0.0.1:8000", audio_tag: str = "<chinese>"):
+        self.base_url = base_url.rstrip("/")
+        self.audio_tag = audio_tag
+
+    def health_check(self, timeout: int = 120, interval: int = 2) -> bool:
+        """等待 ASR 服务就绪，成功返回 True，超时返回 False"""
+        base = self.base_url
+        print(f"{Color.DARK_PURPLE}[MiMoLocalASR] ⏳ 等待服务就绪（{base}）...", end="", flush=True)
+        for _ in range(timeout // interval):
+            try:
+                resp = requests.get(f"{base}/health", timeout=5)
+                if resp.status_code == 200 and resp.json().get("status") == "ok":
+                    print(f" {Color.GREEN}✅{Color.END}")
+                    return True
+            except requests.RequestException:
+                pass
+            print(".", end="", flush=True)
+            time.sleep(interval)
+        print(f" {Color.RED}❌{Color.END}")
+        return False
+
+    def recognize(self, audio_file_path: str) -> str:
+        import os as _os
+        if not _os.path.isfile(audio_file_path):
+            raise FileNotFoundError(f"找不到音频文件: {audio_file_path}")
+
+        # 将 Windows 路径转为 WSL 路径（服务跑在 WSL 中）
+        wsl_path = self._to_wsl_path(audio_file_path)
+        print(f"{Color.DARK_PURPLE}[MiMoLocalASR] 正在调用本地 ASR 服务: {audio_file_path}")
+        print(f"{Color.DARK_PURPLE}   → WSL 路径: {wsl_path}")
+
+        try:
+            resp = requests.post(
+                f"{self.base_url}/asr",
+                json={"audio_path": wsl_path, "audio_tag": self.audio_tag},
+                timeout=600,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.ConnectionError:
+            raise RuntimeError(f"[MiMoLocalASR] 无法连接到服务 {self.base_url}，请确认服务已启动")
+        except requests.HTTPError as e:
+            detail = ""
+            try:
+                detail = f" ({e.response.json()})"
+            except Exception:
+                pass
+            raise RuntimeError(f"[MiMoLocalASR] 服务返回错误: {e}{detail}")
+
+        text = data.get("text", "")
+        duration_ms = data.get("duration_ms", 0)
+        print(f"{Color.GREEN}[MiMoLocalASR] 识别完成 (音频 {duration_ms}ms):\n{text}")
+        return text
 
 
 class DoubaoASR(BaseASR):
