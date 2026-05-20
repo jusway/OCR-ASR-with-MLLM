@@ -8,7 +8,7 @@ from core.text_engine import DeepSeekText, GeminiText, NvidiaText
 # ============================================================
 
 # 1) 任务文件夹（脚本自动找 .mp3）
-folder_path = Path(r"摩诃止观-定智法师 2017/03正说分第一大意发大心/摩诃止观03正说分/2018年4月20日摩诃止观03正说分第一大意修大行039")
+folder_path = Path(r"摩诃止观-定智法师 2017/04正说分第一大意感大果裂大网归大处/2018年5月8日摩诃止观04正说分第一大意感大果裂大网归大处001")
 
 # 2) 元数据（写入校对稿头部）
 year = "2018"
@@ -48,7 +48,7 @@ AVAILABLE_MODELS = {
         "enable_thinking": True, "reasoning_effort": "max",
     }),
 }
-COVERAGE_SELECTED_MODEL = "pro-high"
+COVERAGE_SELECTED_MODEL = "pro-nothink"
 SELECTED_MODEL = "pro-nothink"
 VERIFIER_SELECTED_MODEL = "pro-nothink"
 EXTRACT_SELECTED_MODEL = "pro-nothink"
@@ -60,10 +60,10 @@ reference_text = ""
 example_path = Path("docs/优秀案例.md")
 example_text = example_path.read_text("utf-8").strip() if example_path.exists() else ""
 
-# 覆盖度检查：判断模糊原文是否全面覆盖逐字稿内容
+# 覆盖度检查：找出录音稿件中原文参考未覆盖的内容
 coverage_system_prompt = """\
-你是一位严谨的审核员。你擅长对比两份文本，判断参考材料是否完整覆盖了录音稿件的全部内容。
-而且你习惯输出只输出结论，不说一点多余的话。"""
+你是一位严谨的审核员。
+你习惯只输出遗漏结论，不说一点多余的话。"""
 coverage_user_prompt_template = """\
 【录音稿件】
 {transcript_text}
@@ -71,12 +71,13 @@ coverage_user_prompt_template = """\
 {fuzzy_reference_text}
 ## 背景
 【录音稿件】是一位师父在讲解《摩诃止观辅行传弘决辑注》的记录。
-【原文参考】是这位师父本次讲解的《摩诃止观辅行传弘决辑注》的大致原文范围，供参考。
+【录音稿件】是ASR转录的，包含大量错别字、同音字和语气词，请根据语义理解而非字面匹配。
+【原文参考】是这位师父本次讲解的《摩诃止观辅行传弘决辑注》的大致原文范围，是我复制给你看的。
 ## 任务
-判断【原文参考】是否全面覆盖了【录音稿件】所讲。
-（如果原文参考没有覆盖录音稿件，我将会增大原文参考的范围，直到完全覆盖录音稿件所讲解的内容，另外如果稿件开头明显存在“前情提要”的部分，那个属于上节课，不在本节课考虑范围）
-如果没有完全覆盖，请指出缺失了什么。
-如果完全覆盖，直接输出“【已覆盖】”。
+逐段检查【录音稿件】中讲解的内容，找出【原文参考】是不是复制的范围不够广。（讲解已经讲到后面的内容，但是复制范围不够所以没有后面了）
+（稿件开头明显存在“前情提要”的部分，那个属于上节课，不在本节课考虑范围）
+如果发现复制范围不够广，请你输出遗漏了哪些需要复制的信息。
+如果确认录音稿讲讲解没有超出【原文参考】，那就输出“【无遗漏信息】”。
 """
 
 # 录音稿件+大致原文=得到校对稿

@@ -144,7 +144,7 @@ class AudioProcessingPipeline:
             print(coverage_result)
             print(f"{Color.ORANGE}------------------------")
 
-            if "【已覆盖】" not in coverage_result:
+            if "【无遗漏信息】" not in coverage_result:
                 print(f"{Color.RED}❌ 模糊原文未全面覆盖逐字稿内容，请补充模糊原文后重新运行。{Color.END}")
                 exit(1)
             else:
