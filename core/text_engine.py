@@ -233,12 +233,14 @@ class NvidiaText(BaseTextModel):
         kwargs = {
             "model": self.model_name,
             "messages": messages,
-            "temperature": self.temperature,
-            "top_p": self.top_p,
             "stream": stream
         }
         if self.enable_thinking:
+            # 思考模式下 temperature / top_p 可能不生效，不传更干净
             kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": True, "clear_thinking": False}}
+        else:
+            kwargs["temperature"] = self.temperature
+            kwargs["top_p"] = self.top_p
         return kwargs
 
     def _build_messages(self, system_prompt: str, prompt: str) -> list:
@@ -269,17 +271,19 @@ class NvidiaText(BaseTextModel):
         for attempt in range(5):
             try:
                 response = self.client.chat.completions.create(**self._get_kwargs(messages, stream=True))
+                reasoning_parts = []
                 for chunk in response:
                     if not chunk.choices:
                         continue
                     delta = chunk.choices[0].delta
                     if not delta:
                         continue
-                    # 思考模式：跳过 reasoning_content，只产出 content
                     if hasattr(delta, 'reasoning_content') and delta.reasoning_content:
+                        reasoning_parts.append(delta.reasoning_content)
                         continue
                     if delta.content:
                         yield delta.content
+                self._last_reasoning_content = "".join(reasoning_parts) if reasoning_parts else None
                 return
             except Exception as e:
                 if attempt < 4:
@@ -325,6 +329,7 @@ class DeepSeekText(BaseTextModel):
         else:
             kwargs["temperature"] = self.temperature
             kwargs["top_p"] = self.top_p
+            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
         return kwargs
 
     def _build_messages(self, system_prompt: str, prompt: str) -> list:
@@ -355,17 +360,19 @@ class DeepSeekText(BaseTextModel):
         for attempt in range(5):
             try:
                 response = self.client.chat.completions.create(**self._get_kwargs(messages, stream=True))
+                reasoning_parts = []
                 for chunk in response:
                     if not chunk.choices:
                         continue
                     delta = chunk.choices[0].delta
                     if not delta:
                         continue
-                    # 思考模式：跳过 reasoning_content，只产出 content
                     if hasattr(delta, 'reasoning_content') and delta.reasoning_content:
+                        reasoning_parts.append(delta.reasoning_content)
                         continue
                     if delta.content:
                         yield delta.content
+                self._last_reasoning_content = "".join(reasoning_parts) if reasoning_parts else None
                 return
             except Exception as e:
                 if attempt < 4:

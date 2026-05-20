@@ -11,10 +11,12 @@ from core.utils import Color
 class AudioProcessingPipeline:
     """端到端音频处理流水线：转录 → 覆盖度检查 → 校对 → 信息丢失检查 → 定位并提取原文 → 元数据"""
 
-    def __init__(self, asr_engine, text_engine, fast_text_engine=None):
+    def __init__(self, asr_engine, text_engine, coverage_engine=None, verifier_engine=None, extract_engine=None):
         self.asr_engine = asr_engine
         self.text_engine = text_engine
-        self._fast_engine = fast_text_engine or text_engine
+        self._coverage_engine = coverage_engine or text_engine
+        self._verifier_engine = verifier_engine or text_engine
+        self._extract_engine = extract_engine or text_engine
 
     def _get_audio_duration(self, audio_path):
         audio = AudioSegment.from_mp3(audio_path)
@@ -112,19 +114,24 @@ class AudioProcessingPipeline:
                 f.write(transcript_text)
             print(f"{Color.GREEN}逐字稿已保存至: {transcript_filename}")
 
-        # 步骤 2: 覆盖度检查（检查模糊原文是否全面覆盖逐字稿）
+        # 步骤 2: 覆盖度检查（检查模糊原文是否全面覆盖逐字稿，带缓存）
+        coverage_cache = parent_dir / "覆盖度检查_结果.md"
         print(f"\n{Color.DARK_PURPLE}[2/6] 开始检查原文覆盖度...")
         if coverage_sys_prompt and coverage_user_prompt_template:
-            coverage_prompt = coverage_user_prompt_template.format(
-                transcript_text=transcript_text,
-                fuzzy_reference_text=fuzzy_reference_text
-            )
-            _t0 = time.time()
-            coverage_result = self._fast_engine.generate(coverage_sys_prompt, coverage_prompt)
-            _elapsed = time.time() - _t0
-            _total_time += _elapsed
-            print(f"{Color.GREEN}⏱️ 覆盖度检查模型调用耗时: {self._format_time(_elapsed)}")
-            self._save_thinking("覆盖度检查", parent_dir, self._fast_engine)
+            if coverage_cache.exists():
+                print(f"{Color.GREEN}✅ 检测到已存在覆盖度检查结果，直接复用: {coverage_cache.name}")
+                coverage_result = coverage_cache.read_text("utf-8")
+            else:
+                coverage_prompt = coverage_user_prompt_template.format(
+                    transcript_text=transcript_text,
+                    fuzzy_reference_text=fuzzy_reference_text
+                )
+                _t0 = time.time()
+                coverage_result = self._coverage_engine.generate(coverage_sys_prompt, coverage_prompt)
+                _elapsed = time.time() - _t0
+                _total_time += _elapsed
+                print(f"{Color.GREEN}⏱️ 覆盖度检查模型调用耗时: {self._format_time(_elapsed)}")
+                self._save_thinking("覆盖度检查", parent_dir, self._coverage_engine)
 
             print(f"{Color.ORANGE}--- 覆盖度检查结果 ---")
             print(coverage_result)
@@ -134,6 +141,8 @@ class AudioProcessingPipeline:
                 print(f"{Color.RED}❌ 模糊原文未全面覆盖逐字稿内容，请补充模糊原文后重新运行。{Color.END}")
                 exit(1)
             else:
+                if coverage_sys_prompt and coverage_user_prompt_template and not coverage_cache.exists():
+                    coverage_cache.write_text(coverage_result, "utf-8")
                 print(f"{Color.GREEN}✅ 模糊原文已全面覆盖逐字稿内容")
 
         # 步骤 3+4: 校对 + 信息检查（共享重试，最多 3 次）
@@ -210,29 +219,35 @@ class AudioProcessingPipeline:
                 )
 
                 _t0 = time.time()
-                verification_report = self._fast_engine.generate(verifier_sys_prompt, verifier_user_prompt)
+                verification_report = self._verifier_engine.generate(verifier_sys_prompt, verifier_user_prompt)
                 _elapsed = time.time() - _t0
                 _total_time += _elapsed
                 print(f"{Color.GREEN}⏱️ 信息丢失检查模型调用耗时: {self._format_time(_elapsed)}")
-                self._save_thinking("信息丢失检查", parent_dir, self._fast_engine)
+                self._save_thinking("信息丢失检查", parent_dir, self._verifier_engine)
                 has_loss = "【无遗漏信息】" not in verification_report
                 tag = "有遗漏" if has_loss else "无遗漏"
                 verification_filename = parent_dir / f"丢失信息检查_{tag}.md"
                 verification_filename.write_text(verification_report, "utf-8")
                 print(f"{Color.GREEN}检查报告已保存至: {verification_filename}（{tag}）")
 
-            print(f"{Color.ORANGE}--- 信息丢失检查报告摘要 ---")
-            print("\n".join(verification_report.split("\n")[:10]))
-            if len(verification_report.split("\n")) > 10:
-                print("...")
-            print(f"{Color.ORANGE}----------------------------")
-
             if "【无遗漏信息】" in verification_report:
                 break  # 全部通过，跳出重试循环
 
-            # 浓缩率达标但有遗漏：归档当前文件后重试
-            print(f"{Color.ORANGE}⚠️ 浓缩率达标但检测到信息遗漏，归档本次生成的文件后重试...{Color.END}")
-            archive_dir = parent_dir / "遗漏记录" / base_name
+            # 浓缩率达标但有遗漏：询问用户是否继续
+            print(f"{Color.ORANGE}⚠️ 检测到可能的信息遗漏。{Color.END}")
+            print(f"{Color.DARK_PURPLE}请查看 {verification_filename.name}，判断遗漏是否可以接受。{Color.END}")
+            user_choice = input(f"{Color.YELLOW}输入 y 接受本次校对稿，继续下一步；输入 n 重试（将归档当前文件后重新生成）[{Color.GREEN}y{Color.YELLOW}/{Color.RED}n{Color.YELLOW}]{Color.END} ").strip().lower()
+            if user_choice == "y":
+                print(f"{Color.GREEN}✅ 用户接受当前遗漏，继续下一步。{Color.END}")
+                break  # 用户接受，跳出重试循环
+
+            # 用户选择重试：归档当前文件
+            print(f"{Color.ORANGE}📦 归档本次生成的文件后重试...{Color.END}")
+            archive_base = parent_dir / "遗漏记录"
+            archive_base.mkdir(parents=True, exist_ok=True)
+            existing_nums = [int(d.name) for d in archive_base.iterdir() if d.is_dir() and d.name.isdigit()]
+            next_num = max(existing_nums) + 1 if existing_nums else 1
+            archive_dir = archive_base / str(next_num)
             archive_dir.mkdir(parents=True, exist_ok=True)
             # 拷贝校对稿
             shutil.copy2(final_output_filename, archive_dir / final_output_filename.name)
@@ -261,14 +276,19 @@ class AudioProcessingPipeline:
                 fuzzy_reference_text=fuzzy_reference_text
             )
             _t0 = time.time()
-            extracted = self._fast_engine.generate(extract_sys_prompt, extract_prompt).strip()
+            extracted = self._extract_engine.generate(extract_sys_prompt, extract_prompt).strip()
             _elapsed = time.time() - _t0
             _total_time += _elapsed
             print(f"{Color.GREEN}⏱️ 定位提取原文模型调用耗时: {self._format_time(_elapsed)}")
-            self._save_thinking("定位提取原文", parent_dir, self._fast_engine)
+            self._save_thinking("定位提取原文", parent_dir, self._extract_engine)
             origin_txt.write_text(extracted, "utf-8")
             print(f"{Color.GREEN}✅ 已通过模型提取原文到 {origin_txt.name}")
             self._print_head_tail(extracted)
+            # 检查是否包含换行符
+            if "\n" in extracted:
+                print(f"{Color.RED}⚠️ 提取的原文中包含换行符，请手动检查 {origin_txt.name} 并移除换行符。{Color.END}")
+            else:
+                print(f"{Color.GREEN}✅ 提取的原文中未包含换行符")
         else:
             origin_txt.write_text("", "utf-8")
             print(f"{Color.GREEN}已创建空的 {origin_txt}")
@@ -357,7 +377,8 @@ class BatchTranscriptionPipeline:
 
 
 def run(*, folder_path, year, author, reference_text, asr_model_name,
-        available_models, selected_model, fast_selected_model=None,
+        available_models, selected_model,
+        coverage_selected_model=None, verifier_selected_model=None, extract_selected_model=None,
         coverage_system_prompt="", coverage_user_prompt_template="",
         text_system_prompt, text_user_prompt_template,
         verifier_system_prompt, verifier_user_prompt_template,
@@ -381,29 +402,30 @@ def run(*, folder_path, year, author, reference_text, asr_model_name,
     print(f"  - 文件夹: {folder_path}")
     print(f"  - 音频文件: {audio_path_obj.name}")
 
-    # 初始化引擎
-    engine_cls, engine_kwargs = available_models[selected_model]
+    # 初始化引擎（逐个步骤独立配置）
+    def _init_engine(label, model_key):
+        if model_key and model_key in available_models:
+            cls, kwargs = available_models[model_key]
+            print(f"{Color.DARK_PURPLE}正在初始化 {cls.__name__} 引擎 ({model_key} -> {kwargs['model_name']})...")
+            return cls(**kwargs)
+        print(f"{Color.DARK_PURPLE}{label}：未指定引擎，将复用主引擎")
+        return None
 
     print(f"{Color.DARK_PURPLE}正在初始化 Qwen3ASRFlashFiletrans 引擎...")
     asr_engine = Qwen3ASRFlashFiletrans(model_name=asr_model_name)
 
-    print(f"{Color.DARK_PURPLE}正在初始化 {engine_cls.__name__} 引擎 ({selected_model} -> {engine_kwargs['model_name']})...")
-    text_engine = engine_cls(**engine_kwargs)
-
-    # 初始化快速引擎（用于后两步，若不指定则回退到主引擎）
-    fast_text_engine = None
-    if fast_selected_model and fast_selected_model in available_models:
-        fast_engine_cls, fast_engine_kwargs = available_models[fast_selected_model]
-        print(f"{Color.DARK_PURPLE}正在初始化 {fast_engine_cls.__name__} 快速引擎 ({fast_selected_model} -> {fast_engine_kwargs['model_name']})...")
-        fast_text_engine = fast_engine_cls(**fast_engine_kwargs)
-    else:
-        print(f"{Color.DARK_PURPLE}未指定快速引擎，后两步将复用主引擎")
+    text_engine = _init_engine("校对稿", selected_model)
+    coverage_engine = _init_engine("覆盖度检查", coverage_selected_model)
+    verifier_engine = _init_engine("信息丢失检查", verifier_selected_model)
+    extract_engine = _init_engine("定位提取原文", extract_selected_model)
 
     # 跑流水线
     pipeline = AudioProcessingPipeline(
         asr_engine=asr_engine,
         text_engine=text_engine,
-        fast_text_engine=fast_text_engine
+        coverage_engine=coverage_engine,
+        verifier_engine=verifier_engine,
+        extract_engine=extract_engine
     )
 
     pipeline.run(

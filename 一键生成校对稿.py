@@ -8,7 +8,7 @@ from core.text_engine import DeepSeekText, GeminiText, NvidiaText
 # ============================================================
 
 # 1) 任务文件夹（脚本自动找 .mp3）
-folder_path = Path(r"摩诃止观-定智法师 2017/03正说分第一大意发大心/摩诃止观03正说分/2018年1月19日摩诃止观03正说分第一大意修大行008")
+folder_path = Path(r"摩诃止观-定智法师 2017/03正说分第一大意发大心/摩诃止观03正说分/2018年3月19日摩诃止观03正说分第一大意修大行017")
 
 # 2) 元数据（写入校对稿头部）
 year = "2018"
@@ -18,28 +18,46 @@ author = "定智法师"
 asr_model_name = "qwen3-asr-flash-filetrans"
 
 # 4) 文本模型：想换模型只改 SELECTED_MODEL 这一行的 key
+#    Pro = deepseek-v4-pro, Flash = deepseek-v4-flash
+#    思考模式 effort: max / high；非思考模式无需 reasoning_effort
 AVAILABLE_MODELS = {
-    "deepseek-max": (DeepSeekText, {                          # 步骤 2：长思考
+    # ── Pro ──
+    "pro-nothink": (DeepSeekText, {
         "model_name": "deepseek-v4-pro",
-        "enable_thinking": True, "reasoning_effort": "max",
+        "enable_thinking": False,
     }),
-    "deepseek-high": (DeepSeekText, {                         # 步骤 3/4：短思考
+    "pro-high": (DeepSeekText, {
         "model_name": "deepseek-v4-pro",
         "enable_thinking": True, "reasoning_effort": "high",
     }),
-    "deepseek-fast": (DeepSeekText, {
+    "pro-max": (DeepSeekText, {
+        "model_name": "deepseek-v4-pro",
+        "enable_thinking": True, "reasoning_effort": "max",
+    }),
+    # ── Flash ──
+    "flash-nothink": (DeepSeekText, {
         "model_name": "deepseek-v4-flash",
-        "enable_thinking": True,"reasoning_effort": "high",
+        "enable_thinking": False,
+    }),
+    "flash-high": (DeepSeekText, {
+        "model_name": "deepseek-v4-flash",
+        "enable_thinking": True, "reasoning_effort": "high",
+    }),
+    "flash-max": (DeepSeekText, {
+        "model_name": "deepseek-v4-flash",
+        "enable_thinking": True, "reasoning_effort": "max",
     }),
 }
-SELECTED_MODEL = "deepseek-max"
-FAST_SELECTED_MODEL = "deepseek-high"
+COVERAGE_SELECTED_MODEL = "flash-nothink"
+SELECTED_MODEL = "pro-nothink"
+VERIFIER_SELECTED_MODEL = "pro-nothink"
+EXTRACT_SELECTED_MODEL = "flash-high"
 
 # 模糊原文种子（首次运行时自动创建 模糊原文.md，此后以文件内容为准）
 reference_text = ""
 
 # 优秀案例（从 优秀案例.md 读取，作为 one-shot 示例拼接在逐字稿前）
-example_path = Path("优秀案例.md")
+example_path = Path("docs/优秀案例.md")
 example_text = example_path.read_text("utf-8").strip() if example_path.exists() else ""
 
 # 覆盖度检查：判断模糊原文是否全面覆盖逐字稿内容
@@ -55,15 +73,16 @@ coverage_user_prompt_template = """\
 【录音稿件】是一位师父在讲解《摩诃止观辅行传弘决辑注》的记录。
 【原文参考】是这位师父本次讲解的《摩诃止观辅行传弘决辑注》的大致原文范围，供参考。
 ## 任务
-判断【原文参考】是否全面覆盖了【录音稿件】所讲。（如果原文参考没有覆盖录音稿件，我将会增大原文参考的范围，直到完全覆盖录音稿件所讲解的内容）
+判断【原文参考】是否全面覆盖了【录音稿件】所讲。
+（如果原文参考没有覆盖录音稿件，我将会增大原文参考的范围，直到完全覆盖录音稿件所讲解的内容，另外如果稿件开头明显存在“前情提要”的部分，那个属于上节课，不在本节课考虑范围）
 如果没有完全覆盖，请指出缺失了什么。
 如果完全覆盖，直接输出“【已覆盖】”。
 """
 
 # 录音稿件+大致原文=得到校对稿
 text_system_prompt = """\
-你是一位编辑。你擅长把录音稿件整理成井井有条的校对稿，而且不会丢失任何的信息。这一点一直是你的骄傲。
-而且你习惯输出只输出内容，不说一点多余的话。"""
+你是一位编辑。你擅长校对录音稿件，整理得井井有条，而且不会丢失任何的信息。这一点一直是你的骄傲。
+"""
 text_user_prompt_template = """\
 【优秀案例】
 {example_text}
@@ -75,7 +94,7 @@ text_user_prompt_template = """\
 【录音稿件】是一位师父在讲解《摩诃止观辅行传弘决辑注》的记录。
 【原文参考】是这位师父讲解的《摩诃止观辅行传弘决辑注》的大致原文范围，供你参考。
 ## 任务
-请按照【优秀案例】的风格和详细程度校对【录音稿件】。
+参考【优秀案例】，校对【录音稿件】，直接输出校对稿的正文内容。
 """
 
 # 信息丢失检查提示词
@@ -104,9 +123,10 @@ extract_user_prompt_template = """\
 复制的节选是我估摸着这个讲稿所讲的《摩诃止观辅行传弘决辑注》的大致范围，复制给你看。\
 是docx文档节选复制到markdown文件中得到的文本，可能会有些乱码。
 复制的节选包括四部分，摩诃止观正文（一般被**包裹住了）、摩诃止观科判（一般跟在正文前面）、\
-摩诃止观解释（一般跟在正文后面）、注脚（在整个内容前半标记，在后半罗列注解）
+摩诃止观解释（一般跟在正文后面）、注脚（一般在一起罗列）
 ## 思考
 思考【讲稿】的内容对应在讲解【复制的节选】中**摩诃止观正文**的哪些句子（按顺序）。
+(讲稿最后如果存在只是提了一下的正文，但是并没有开讲，这是下节课要讲的，本节课不纳入)
 ## 任务
 把这些摩诃止观正文按顺序直接拼接（不使用换行符等拼接）。
 
@@ -126,7 +146,9 @@ if __name__ == "__main__":
         asr_model_name=asr_model_name,
         available_models=AVAILABLE_MODELS,
         selected_model=SELECTED_MODEL,
-        fast_selected_model=FAST_SELECTED_MODEL,
+        coverage_selected_model=COVERAGE_SELECTED_MODEL,
+        verifier_selected_model=VERIFIER_SELECTED_MODEL,
+        extract_selected_model=EXTRACT_SELECTED_MODEL,
         coverage_system_prompt=coverage_system_prompt,
         coverage_user_prompt_template=coverage_user_prompt_template,
         text_system_prompt=text_system_prompt,
