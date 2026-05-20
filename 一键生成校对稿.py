@@ -8,7 +8,7 @@ from core.text_engine import DeepSeekText, GeminiText, NvidiaText
 # ============================================================
 
 # 1) 任务文件夹（脚本自动找 .mp3）
-folder_path = Path(r"摩诃止观-定智法师 2017/03正说分第一大意发大心/摩诃止观03正说分/2018年3月19日摩诃止观03正说分第一大意修大行017")
+folder_path = Path(r"摩诃止观-定智法师 2017/03正说分第一大意发大心/摩诃止观03正说分/2018年4月20日摩诃止观03正说分第一大意修大行039")
 
 # 2) 元数据（写入校对稿头部）
 year = "2018"
@@ -48,10 +48,10 @@ AVAILABLE_MODELS = {
         "enable_thinking": True, "reasoning_effort": "max",
     }),
 }
-COVERAGE_SELECTED_MODEL = "flash-nothink"
+COVERAGE_SELECTED_MODEL = "pro-high"
 SELECTED_MODEL = "pro-nothink"
 VERIFIER_SELECTED_MODEL = "pro-nothink"
-EXTRACT_SELECTED_MODEL = "flash-high"
+EXTRACT_SELECTED_MODEL = "pro-nothink"
 
 # 模糊原文种子（首次运行时自动创建 模糊原文.md，此后以文件内容为准）
 reference_text = ""
@@ -124,11 +124,10 @@ extract_user_prompt_template = """\
 是docx文档节选复制到markdown文件中得到的文本，可能会有些乱码。
 复制的节选包括四部分，摩诃止观正文（一般被**包裹住了）、摩诃止观科判（一般跟在正文前面）、\
 摩诃止观解释（一般跟在正文后面）、注脚（一般在一起罗列）
-## 思考
-思考【讲稿】的内容对应在讲解【复制的节选】中**摩诃止观正文**的哪些句子（按顺序）。
-(讲稿最后如果存在只是提了一下的正文，但是并没有开讲，这是下节课要讲的，本节课不纳入)
 ## 任务
-把这些摩诃止观正文按顺序直接拼接（不使用换行符等拼接）。
+找到【讲稿】的内容对应在讲解【复制的节选】中摩诃止观正文的哪些句子（按顺序）。
+(讲稿最后如果存在只是提了一下的正文，但是并没有开讲，这是下节课要讲的，本节课不纳入)
+然后把这些摩诃止观正文按顺序直接拼接输出。
 
 【讲稿】
 {written_text}

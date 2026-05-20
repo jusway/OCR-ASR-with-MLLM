@@ -1,5 +1,6 @@
 import re
 import shutil
+import subprocess
 import time
 from pathlib import Path
 from pydub import AudioSegment
@@ -19,8 +20,12 @@ class AudioProcessingPipeline:
         self._extract_engine = extract_engine or text_engine
 
     def _get_audio_duration(self, audio_path):
-        audio = AudioSegment.from_mp3(audio_path)
-        duration_seconds = int(audio.duration_seconds)
+        result = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+             "-of", "csv=p=0", str(audio_path)],
+            capture_output=True, text=True
+        )
+        duration_seconds = int(float(result.stdout.strip()))
         hours, remainder = divmod(duration_seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
@@ -89,6 +94,8 @@ class AudioProcessingPipeline:
             print(f"{Color.GREEN}✅ 已创建 {fuzzy_filename}")
         else:
             print(f"{Color.GREEN}检测到已存在 {fuzzy_filename.name}")
+        duration = self._get_audio_duration(audio_path)
+        print(f"{Color.ORANGE}⏱️ 音频时长: {duration}，供参考选取原文范围{Color.END}")
         print(f"{Color.DARK_PURPLE}请在 {fuzzy_filename.name} 中整理模糊原文，保存后回到此处按回车继续...")
         input()
         fuzzy_reference_text = fuzzy_filename.read_text("utf-8").strip()
@@ -180,6 +187,10 @@ class AudioProcessingPipeline:
                 _total_time += _elapsed
                 print(f"{Color.GREEN}⏱️ 校对稿模型调用耗时: {self._format_time(_elapsed)}")
                 self._save_thinking("校对", parent_dir)
+
+                # 后处理：去掉模型擅加的开头标志
+                if written_text.startswith("【校对稿】"):
+                    written_text = written_text[len("【校对稿】"):].strip()
 
                 # 先写入无后缀版本，等计算出浓缩率后再改名
                 final_output_filename.write_text(written_text, "utf-8")
@@ -281,12 +292,26 @@ class AudioProcessingPipeline:
             _total_time += _elapsed
             print(f"{Color.GREEN}⏱️ 定位提取原文模型调用耗时: {self._format_time(_elapsed)}")
             self._save_thinking("定位提取原文", parent_dir, self._extract_engine)
+
+            # 后处理：去掉文本中所有的 *
+            extracted = extracted.replace("*", "").strip()
+
+            # 后处理：去掉 『』
+            extracted = extracted.replace("』", "").replace("『", "")
+
+            # 后处理：去掉换行符
+            if "\n" in extracted:
+                has_newline = True
+                extracted = extracted.replace("\n", "")
+            else:
+                has_newline = False
+
+            # 保存后处理后的原文
             origin_txt.write_text(extracted, "utf-8")
             print(f"{Color.GREEN}✅ 已通过模型提取原文到 {origin_txt.name}")
             self._print_head_tail(extracted)
-            # 检查是否包含换行符
-            if "\n" in extracted:
-                print(f"{Color.RED}⚠️ 提取的原文中包含换行符，请手动检查 {origin_txt.name} 并移除换行符。{Color.END}")
+            if has_newline:
+                print(f"{Color.ORANGE}⚠️ 提取的原文中包含换行符，已自动移除。{Color.END}")
             else:
                 print(f"{Color.GREEN}✅ 提取的原文中未包含换行符")
         else:
