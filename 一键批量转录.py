@@ -2,7 +2,7 @@
 from pathlib import Path
 
 from core.asr_engine import Qwen3ASRFlashFiletrans, MiMoLocalASR
-from core.pipeline import BatchTranscriptionPipeline
+from core.batch_transcribe_pipeline import BatchTranscriptionPipeline
 
 # ============================================================
 # ================ 配置 =======================================

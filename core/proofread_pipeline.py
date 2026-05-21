@@ -1,9 +1,12 @@
+"""
+单次校对流水线（旧版，仅维护兼容）。
+覆盖度检查 → 校对 → 信息丢失检查 → 提取原文 → 元数据
+"""
 import re
 import shutil
 import subprocess
 import time
 from pathlib import Path
-from pydub import AudioSegment
 
 from core.asr_engine import Qwen3ASRFlashFiletrans
 from core.utils import Color
@@ -36,12 +39,11 @@ class AudioProcessingPipeline:
         if hasattr(eng, '_last_reasoning_content') and eng._last_reasoning_content:
             thinking_path = parent_dir / f"思维链_{label}.md"
             thinking_path.write_text(eng._last_reasoning_content, encoding="utf-8")
-            eng._last_reasoning_content = None  # 消费后清空
+            eng._last_reasoning_content = None
             print(f"{Color.GREEN}🧠 思维链已保存: {thinking_path.name}")
 
     @staticmethod
     def _format_time(seconds: float) -> str:
-        """将秒数格式化为 xx分xx秒"""
         minutes = int(seconds // 60)
         secs = int(seconds % 60)
         if minutes > 0:
@@ -116,12 +118,11 @@ class AudioProcessingPipeline:
             _elapsed = time.time() - _t0
             _total_time += _elapsed
             print(f"{Color.GREEN}⏱️ ASR 转录耗时: {self._format_time(_elapsed)}")
-
             with open(transcript_filename, "w", encoding="utf-8") as f:
                 f.write(transcript_text)
             print(f"{Color.GREEN}逐字稿已保存至: {transcript_filename}")
 
-        # 步骤 2: 覆盖度检查（检查模糊原文是否全面覆盖逐字稿，带缓存）
+        # 步骤 2: 覆盖度检查
         coverage_cache = parent_dir / "覆盖度检查_结果.md"
         print(f"\n{Color.DARK_PURPLE}[2/6] 开始检查原文覆盖度...")
         if coverage_sys_prompt and coverage_user_prompt_template:
@@ -144,7 +145,7 @@ class AudioProcessingPipeline:
             print(coverage_result)
             print(f"{Color.ORANGE}------------------------")
 
-            if "【无遗漏信息】" not in coverage_result:
+            if "【没有多讲】" not in coverage_result:
                 print(f"{Color.RED}❌ 模糊原文未全面覆盖逐字稿内容，请补充模糊原文后重新运行。{Color.END}")
                 exit(1)
             else:
@@ -157,7 +158,6 @@ class AudioProcessingPipeline:
         _attempt = 0
         while _attempt < _retry_left:
             if _attempt > 0:
-                # 重试时清除缓存，强制从头重新生成
                 for f in parent_dir.glob(f"{base_name}_校对稿_*.md"):
                     f.unlink()
                 for f in parent_dir.glob("丢失信息检查_*.md"):
@@ -166,16 +166,14 @@ class AudioProcessingPipeline:
                 print(f"⏳ 第 {_attempt+1} 次重试...")
                 print(f"{'=' * 50}{Color.END}")
 
-            # 步骤 2: 校对稿
             print(f"\n{Color.DARK_PURPLE}[3/6] 开始处理校对稿...")
-            # 查找是否有任意浓缩率的缓存校对稿
             existing = list(parent_dir.glob(f"{base_name}_校对稿_*.md"))
             if existing:
                 final_output_filename = existing[0]
                 print(f"{Color.GREEN}✅ 检测到已存在校对稿，直接复用: {final_output_filename.name}")
                 written_text = final_output_filename.read_text("utf-8")
             else:
-                print(f"{Color.DARK_PURPLE}正在使用 {self.text_engine.model_name} 将逐字稿整理为校对稿，请耐心等待...")
+                print(f"{Color.DARK_PURPLE}正在使用 {self.text_engine.model_name} 将逐字稿整理为校对稿...")
                 user_prompt = text_user_prompt_template.format(
                     fuzzy_reference_text=fuzzy_reference_text,
                     transcript_text=transcript_text,
@@ -187,20 +185,14 @@ class AudioProcessingPipeline:
                 _total_time += _elapsed
                 print(f"{Color.GREEN}⏱️ 校对稿模型调用耗时: {self._format_time(_elapsed)}")
                 self._save_thinking("校对", parent_dir)
-
-                # 后处理：去掉模型擅加的开头标志
                 if written_text.startswith("【校对稿】"):
                     written_text = written_text[len("【校对稿】"):].strip()
-
-                # 先写入无后缀版本，等计算出浓缩率后再改名
                 final_output_filename.write_text(written_text, "utf-8")
 
-            # 给校对稿文件名加上浓缩率后缀
             transcript_len = len(transcript_text)
             written_len = len(written_text)
             ratio = (written_len / transcript_len * 100) if transcript_len > 0 else 0.0
             print(f"{Color.ORANGE}📊 字数统计：校对稿 {written_len} / 逐字稿 {transcript_len} = {ratio:.1f}%")
-
             ratio_filename = parent_dir / f"{base_name}_校对稿_{ratio:.1f}%.md"
             if final_output_filename != ratio_filename and final_output_filename.exists():
                 final_output_filename.rename(ratio_filename)
@@ -213,9 +205,8 @@ class AudioProcessingPipeline:
                 if _attempt >= _retry_left:
                     print(f"{Color.RED}❌ 经 {_retry_left} 次尝试浓缩率仍低于 50%。流水线终止。{Color.END}")
                     exit(1)
-                continue  # 回到 while 循环开头重试
+                continue
 
-            # 步骤 3: 信息丢失检查
             print(f"\n{Color.DARK_PURPLE}[4/6] 开始检查信息丢失情况...")
             cached = list(parent_dir.glob("丢失信息检查_*.md"))
             if cached:
@@ -223,12 +214,11 @@ class AudioProcessingPipeline:
                 print(f"{Color.GREEN}✅ 检测到已存在检查报告，直接复用: {verification_filename.name}")
                 verification_report = verification_filename.read_text("utf-8")
             else:
-                print(f"{Color.DARK_PURPLE}正在对比逐字稿与校对稿，检查是否有关键信息丢失...")
+                print(f"{Color.DARK_PURPLE}正在对比逐字稿与校对稿...")
                 verifier_user_prompt = verifier_user_prompt_template.format(
                     transcript_text=transcript_text,
                     written_text=written_text,
                 )
-
                 _t0 = time.time()
                 verification_report = self._verifier_engine.generate(verifier_sys_prompt, verifier_user_prompt)
                 _elapsed = time.time() - _t0
@@ -242,17 +232,18 @@ class AudioProcessingPipeline:
                 print(f"{Color.GREEN}检查报告已保存至: {verification_filename}（{tag}）")
 
             if "【无遗漏信息】" in verification_report:
-                break  # 全部通过，跳出重试循环
+                break
 
-            # 浓缩率达标但有遗漏：询问用户是否继续
             print(f"{Color.ORANGE}⚠️ 检测到可能的信息遗漏。{Color.END}")
             print(f"{Color.DARK_PURPLE}请查看 {verification_filename.name}，判断遗漏是否可以接受。{Color.END}")
-            user_choice = input(f"{Color.YELLOW}输入 y 接受本次校对稿，继续下一步；输入 n 重试（将归档当前文件后重新生成）[{Color.GREEN}y{Color.YELLOW}/{Color.RED}n{Color.YELLOW}]{Color.END} ").strip().lower()
+            user_choice = input(
+                f"{Color.ORANGE}输入 y 接受本次校对稿，继续下一步；"
+                f"输入 n 重试（将归档当前文件后重新生成）"
+                f"[{Color.GREEN}y{Color.ORANGE}/{Color.RED}n{Color.ORANGE}]{Color.END} ").strip().lower()
             if user_choice == "y":
                 print(f"{Color.GREEN}✅ 用户接受当前遗漏，继续下一步。{Color.END}")
-                break  # 用户接受，跳出重试循环
+                break
 
-            # 用户选择重试：归档当前文件
             print(f"{Color.ORANGE}📦 归档本次生成的文件后重试...{Color.END}")
             archive_base = parent_dir / "遗漏记录"
             archive_base.mkdir(parents=True, exist_ok=True)
@@ -260,20 +251,16 @@ class AudioProcessingPipeline:
             next_num = max(existing_nums) + 1 if existing_nums else 1
             archive_dir = archive_base / str(next_num)
             archive_dir.mkdir(parents=True, exist_ok=True)
-            # 拷贝校对稿
             shutil.copy2(final_output_filename, archive_dir / final_output_filename.name)
-            # 移动检查报告（下次重试会生成新的）
             for f in parent_dir.glob("丢失信息检查_*.md"):
                 shutil.copy2(f, archive_dir / f.name)
-                f.unlink()  # 删掉原文件，避免下次重试时缓存命中
+                f.unlink()
             print(f"{Color.GREEN}✅ 已归档至: {archive_dir}")
-
             _attempt += 1
             if _attempt >= _retry_left:
                 print(f"{Color.RED}❌ 经 {_retry_left} 次尝试信息仍有遗漏。流水线终止。{Color.END}")
                 exit(1)
 
-        # 步骤 4: 精准定位并提取原文 (带缓存)
         origin_txt = parent_dir / "原文.md"
         print(f"\n{Color.DARK_PURPLE}[5/6] 正在通过模型定位并提取纯原文...")
         if origin_txt.exists():
@@ -292,21 +279,13 @@ class AudioProcessingPipeline:
             _total_time += _elapsed
             print(f"{Color.GREEN}⏱️ 定位提取原文模型调用耗时: {self._format_time(_elapsed)}")
             self._save_thinking("定位提取原文", parent_dir, self._extract_engine)
-
-            # 后处理：去掉文本中所有的 *
             extracted = extracted.replace("*", "").strip()
-
-            # 后处理：去掉 『』
             extracted = extracted.replace("』", "").replace("『", "")
-
-            # 后处理：去掉换行符
             if "\n" in extracted:
                 has_newline = True
                 extracted = extracted.replace("\n", "")
             else:
                 has_newline = False
-
-            # 保存后处理后的原文
             origin_txt.write_text(extracted, "utf-8")
             print(f"{Color.GREEN}✅ 已通过模型提取原文到 {origin_txt.name}")
             self._print_head_tail(extracted)
@@ -320,21 +299,17 @@ class AudioProcessingPipeline:
 
         print(f"{Color.GREEN}⏱️ 本次全部模型调用总耗时: {self._format_time(_total_time)}")
 
-        # 步骤 5: 补充元数据并插入校对稿
         print(f"\n{Color.DARK_PURPLE}[6/6] 准备补充元数据信息...")
         with open(final_output_filename, "r", encoding="utf-8") as f:
             current_written_text = f.read()
-
         if current_written_text.strip().startswith("> 标题："):
             print(f"{Color.GREEN}✅ 检测到校对稿已包含元数据，跳过元数据。")
         else:
             duration = self._get_audio_duration(audio_path)
-
             input(f"{Color.DARK_PURPLE}请在 {origin_txt.name} 中检查整理，保存后回到此处按回车继续...")
             final_reference = origin_txt.read_text("utf-8").strip()
             final_reference = f"> 原文：{final_reference}\n" if final_reference else ""
             print(f"{Color.ORANGE}-------------------------------------------")
-
             metadata_header = (
                 f"> 标题：{base_name}\n"
                 f"> 时间：{year}\n"
@@ -343,7 +318,6 @@ class AudioProcessingPipeline:
                 f"{final_reference}"
                 "\n---\n\n"
             )
-
             final_content = metadata_header + current_written_text
             with open(final_output_filename, "w", encoding="utf-8") as f:
                 f.write(final_content)
@@ -356,49 +330,6 @@ class AudioProcessingPipeline:
         print(f"  - 校对稿: {final_output_filename.name}")
         print(f"  - 检查报告: {verification_filename.name}")
         print(f"===========================================\n")
-
-
-class BatchTranscriptionPipeline:
-    """批量转录流水线：递归扫描文件夹，对每个音频文件调用 ASR 引擎生成逐字稿。"""
-
-    def __init__(self, asr_engine, audio_extensions=None):
-        self.asr_engine = asr_engine
-        self.audio_extensions = audio_extensions or {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".wma"}
-
-    def run(self, folder_path: str | Path):
-        folder_path = Path(folder_path)
-        audio_files = sorted(
-            [f for f in folder_path.rglob("*") if f.is_file() and f.suffix.lower() in self.audio_extensions],
-            key=lambda p: [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", str(p))]
-        )
-        if not audio_files:
-            print(f"{Color.RED}错误：在 {folder_path} 下没找到音频文件")
-            exit(1)
-
-        print(f"{Color.GREEN}找到 {len(audio_files)} 个音频文件")
-        print(f"{Color.DARK_PURPLE}使用 {type(self.asr_engine).__name__} ASR 引擎")
-
-        completed = 0
-        total_seconds = 0.0
-
-        for audio_path in audio_files:
-            transcript_path = audio_path.parent / f"{audio_path.stem}_逐字稿.md"
-            if transcript_path.exists():
-                print(f"{Color.GREEN}[{audio_path.stem}] 逐字稿已存在，跳过")
-                continue
-
-            print(f"{Color.DARK_PURPLE}[{audio_path.stem}] 正在转录...")
-            transcript_text = self.asr_engine.recognize(str(audio_path.resolve()))
-            transcript_path.write_text(transcript_text, "utf-8")
-            print(f"{Color.GREEN}[{audio_path.stem}] 逐字稿已保存")
-
-            completed += 1
-            duration_sec = len(AudioSegment.from_file(str(audio_path))) / 1000.0
-            total_seconds += duration_sec
-            total_minutes = total_seconds / 60.0
-            print(f"{Color.GREEN}✅ 已完成第 {completed} 条音频转录（累计 {total_minutes:.1f} 分钟）")
-
-        print(f"\n{Color.GREEN}全部完成。")
 
 
 def run(*, folder_path, year, author, reference_text, asr_model_name,
@@ -415,7 +346,6 @@ def run(*, folder_path, year, author, reference_text, asr_model_name,
         print(f"{Color.RED}错误：找不到文件夹 {folder_path}")
         exit(1)
 
-    # 自动寻找音频文件 (.mp3)，多个时优先和文件夹同名的
     audio_files = list(folder_path.glob("*.mp3"))
     if not audio_files:
         print(f"{Color.RED}错误：在 {folder_path} 下没找到 .mp3 文件")
@@ -427,7 +357,6 @@ def run(*, folder_path, year, author, reference_text, asr_model_name,
     print(f"  - 文件夹: {folder_path}")
     print(f"  - 音频文件: {audio_path_obj.name}")
 
-    # 初始化引擎（逐个步骤独立配置）
     def _init_engine(label, model_key):
         if model_key and model_key in available_models:
             cls, kwargs = available_models[model_key]
@@ -438,13 +367,11 @@ def run(*, folder_path, year, author, reference_text, asr_model_name,
 
     print(f"{Color.DARK_PURPLE}正在初始化 Qwen3ASRFlashFiletrans 引擎...")
     asr_engine = Qwen3ASRFlashFiletrans(model_name=asr_model_name)
-
     text_engine = _init_engine("校对稿", selected_model)
     coverage_engine = _init_engine("覆盖度检查", coverage_selected_model)
     verifier_engine = _init_engine("信息丢失检查", verifier_selected_model)
     extract_engine = _init_engine("定位提取原文", extract_selected_model)
 
-    # 跑流水线
     pipeline = AudioProcessingPipeline(
         asr_engine=asr_engine,
         text_engine=text_engine,
@@ -452,7 +379,6 @@ def run(*, folder_path, year, author, reference_text, asr_model_name,
         verifier_engine=verifier_engine,
         extract_engine=extract_engine
     )
-
     pipeline.run(
         audio_path=audio_path,
         fuzzy_reference_text=reference_text,
