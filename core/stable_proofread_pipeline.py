@@ -73,9 +73,10 @@ class TwoPassProofreadPipeline:
 
         draft_filename = parent_dir / f"{base_name}_初次校对稿.md"
         precision_filename = parent_dir / f"{base_name}_精准原文.md"
-        final_filename = parent_dir / f"{base_name}_校对稿.md"
+        final_filename = parent_dir / f"{base_name}_最终校对稿.md"
         transcript_filename = parent_dir / f"{base_name}_逐字稿.md"
         fuzzy_filename = parent_dir / "模糊原文.md"
+        main_body_filename = parent_dir / f"{base_name}_摩诃止观正文.md"
 
         # ── 前置：模糊原文 ──────────────────
         if not fuzzy_filename.exists():
@@ -155,6 +156,11 @@ class TwoPassProofreadPipeline:
             precision_filename.write_text(precision_text, encoding="utf-8")
             print(f"{Color.GREEN}精准原文已保存至: {precision_filename.name}")
 
+        # ── 提取 ** 包裹的摩诃止观正文 ──────
+        main_body = "".join(re.findall(r"\*\*(.*?)\*\*", precision_text))
+        main_body_filename.write_text(main_body, encoding="utf-8")
+        print(f"{Color.GREEN}📄 摩诃止观正文已提取至: {main_body_filename.name}{Color.END}")
+
         # ── 步骤 3：最终校对稿 ──────────────
         print(f"\n[3/4] 正在使用精准原文生成最终校对稿...")
         if final_filename.exists():
@@ -192,11 +198,13 @@ class TwoPassProofreadPipeline:
             print(f"{Color.GREEN}✅ 检测到校对稿已包含元数据，跳过。")
         else:
             duration = self._get_audio_duration(audio_path)
+            main_body_header = f"> 摩诃止观正文：{main_body}\n" if main_body else ""
             metadata_header = (
                 f"> 标题：{base_name}\n"
                 f"> 时间：{year}\n"
                 f"> 时长：{duration}\n"
                 f"> 作者：{author}\n"
+                f"{main_body_header}"
                 "\n---\n\n"
             )
             final_filename.write_text(metadata_header + current_text, encoding="utf-8")
@@ -208,7 +216,8 @@ class TwoPassProofreadPipeline:
         print(f"  - 逐字稿: {transcript_filename.name}")
         print(f"  - 初次校对稿: {draft_filename.name}")
         print(f"  - 精准原文: {precision_filename.name}")
-        print(f"  - 校对稿: {final_filename.name}")
+        print(f"  - 最终校对稿: {final_filename.name}")
+        print(f"  - 摩诃止观正文: {main_body_filename.name}")
         print(f"===========================================\n")
 
     # ── 工具方法 ─────────────────────────────
