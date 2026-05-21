@@ -160,6 +160,9 @@ class TwoPassProofreadPipeline:
         main_body = "".join(re.findall(r"\*\*(.*?)\*\*", precision_text))
         main_body_filename.write_text(main_body, encoding="utf-8")
         print(f"{Color.GREEN}📄 摩诃止观正文已提取至: {main_body_filename.name}{Color.END}")
+        if main_body:
+            print(f"{Color.ORANGE}🔍 摩诃止观正文 前20字: {main_body[:20]}{Color.END}")
+            print(f"{Color.ORANGE}🔍 摩诃止观正文 后20字: {main_body[-20:]}{Color.END}")
 
         # ── 步骤 3：最终校对稿 ──────────────
         print(f"\n[3/4] 正在使用精准原文生成最终校对稿...")

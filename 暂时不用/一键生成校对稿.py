@@ -27,7 +27,7 @@ VERIFIER_SELECTED_MODEL = "pro-nothink"
 EXTRACT_SELECTED_MODEL = "pro-high"
 
 # 优秀案例（从 优秀案例.md 读取，作为 one-shot 示例拼接在逐字稿前）
-example_path = Path("docs/优秀案例.md")
+example_path = Path("../docs/优秀案例.md")
 example_text = example_path.read_text("utf-8").strip() if example_path.exists() else ""
 
 # 覆盖度检查
