@@ -76,7 +76,6 @@ class TwoPassProofreadPipeline:
         final_filename = parent_dir / f"{base_name}_最终校对稿.md"
         transcript_filename = parent_dir / f"{base_name}_逐字稿.md"
         fuzzy_filename = parent_dir / "模糊原文.md"
-        main_body_filename = parent_dir / f"{base_name}_摩诃止观正文.md"
 
         # ── 前置：模糊原文 ──────────────────
         if not fuzzy_filename.exists():
@@ -158,11 +157,6 @@ class TwoPassProofreadPipeline:
 
         # ── 提取 ** 包裹的摩诃止观正文 ──────
         main_body = "".join(re.findall(r"\*\*(.*?)\*\*", precision_text))
-        main_body_filename.write_text(main_body, encoding="utf-8")
-        print(f"{Color.GREEN}📄 摩诃止观正文已提取至: {main_body_filename.name}{Color.END}")
-        if main_body:
-            print(f"{Color.ORANGE}🔍 摩诃止观正文 前20字: {main_body[:20]}{Color.END}")
-            print(f"{Color.ORANGE}🔍 摩诃止观正文 后20字: {main_body[-20:]}{Color.END}")
 
         # ── 步骤 3：最终校对稿 ──────────────
         print(f"\n[3/4] 正在使用精准原文生成最终校对稿...")
@@ -170,21 +164,32 @@ class TwoPassProofreadPipeline:
             print(f"{Color.GREEN}✅ 检测到已存在校对稿，直接复用: {final_filename.name}")
             final_text = final_filename.read_text("utf-8")
         else:
-            self._confirm_step("最终校对（大模型）", debug)
-            final_prompt = final_user_prompt_template.format(
-                transcript_text=transcript_text,
-                precision_text=precision_text,
-                example_text=example_text,
-            )
-            _t0 = time.time()
-            final_text = final_engine.generate(final_sys_prompt, final_prompt)
-            _elapsed = time.time() - _t0
-            _total_time += _elapsed
-            print(f"{Color.GREEN}⏱️ 最终校对稿模型调用耗时: {self._format_time(_elapsed)}")
-            self._save_thinking("最终校对", parent_dir, final_engine)
-            if final_text.startswith("【校对稿】"):
-                final_text = final_text[len("【校对稿】"):].strip()
-                print(f"{Color.GREEN}✅ 后处理：已去掉【校对稿】前缀{Color.END}")
+            _final_retry = 3
+            for _attempt in range(_final_retry):
+                self._confirm_step("最终校对（大模型）", debug)
+                final_prompt = final_user_prompt_template.format(
+                    transcript_text=transcript_text,
+                    precision_text=precision_text,
+                    example_text=example_text,
+                )
+                _t0 = time.time()
+                final_text = final_engine.generate(final_sys_prompt, final_prompt)
+                _elapsed = time.time() - _t0
+                _total_time += _elapsed
+                print(f"{Color.GREEN}⏱️ 最终校对稿模型调用耗时: {self._format_time(_elapsed)}")
+                self._save_thinking("最终校对", parent_dir, final_engine)
+                if final_text.startswith("【校对稿】"):
+                    final_text = final_text[len("【校对稿】"):].strip()
+                    print(f"{Color.GREEN}✅ 后处理：已去掉【校对稿】前缀{Color.END}")
+
+                # 浓缩率检查
+                _ratio = len(final_text) / len(transcript_text) * 100
+                print(f"{Color.ORANGE}📊 字数统计：校对稿 {len(final_text)} / 逐字稿 {len(transcript_text)} = {_ratio:.1f}%")
+                if _ratio >= 50.0:
+                    break
+                if _attempt < _final_retry - 1:
+                    print(f"{Color.ORANGE}⚠️ 浓缩率 {_ratio:.1f}% 低于 50%，第 {_attempt + 2} 次重试...{Color.END}")
+
             final_filename.write_text(final_text, encoding="utf-8")
             print(f"{Color.GREEN}最终校对稿已保存至: {final_filename.name}")
 
@@ -211,7 +216,10 @@ class TwoPassProofreadPipeline:
                 "\n---\n\n"
             )
             final_filename.write_text(metadata_header + current_text, encoding="utf-8")
-            print(f"{Color.GREEN}✅ 元数据已成功插入校对稿开头！")
+            print(f"{Color.GREEN}✅ 元数据已成功插入校对稿开头！{Color.END}")
+            if main_body:
+                print(f"{Color.ORANGE}📄 以下为插入的摩诃止观正文：{Color.END}")
+                print(main_body)
 
         print(f"\n{Color.GREEN}===========================================")
         print("🎉 全部流程处理完成！")
@@ -220,7 +228,6 @@ class TwoPassProofreadPipeline:
         print(f"  - 初次校对稿: {draft_filename.name}")
         print(f"  - 精准原文: {precision_filename.name}")
         print(f"  - 最终校对稿: {final_filename.name}")
-        print(f"  - 摩诃止观正文: {main_body_filename.name}")
         print(f"===========================================\n")
 
     # ── 工具方法 ─────────────────────────────
