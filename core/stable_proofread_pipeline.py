@@ -85,7 +85,7 @@ class TwoPassProofreadPipeline:
             print(f"{Color.GREEN}检测到已存在 {fuzzy_filename.name}")
         duration = self._get_audio_duration(audio_path)
         print(f"{Color.ORANGE}⏱️ 音频时长: {duration}，供参考选取原文范围{Color.END}")
-        print(f"{Color.DARK_PURPLE}请在 {fuzzy_filename.name} 中整理模糊原文，保存后回到此处按回车继续...")
+        print(f"请在 {fuzzy_filename.name} 中整理模糊原文，保存后回到此处按回车继续...")
         input()
         fuzzy_reference_text = fuzzy_filename.read_text("utf-8").strip()
         if not fuzzy_reference_text:
@@ -93,13 +93,13 @@ class TwoPassProofreadPipeline:
             exit(1)
 
         # ── 步骤 0：ASR 转录 ────────────────
-        print(f"\n{Color.DARK_PURPLE}[0/4] 开始处理整段音频转录...")
+        print(f"\n[0/4] 开始处理整段音频转录...")
         if transcript_filename.exists():
             print(f"{Color.GREEN}✅ 检测到已存在逐字稿，直接复用: {transcript_filename.name}")
             transcript_text = transcript_filename.read_text("utf-8")
         else:
             self._confirm_step("ASR 转录", debug)
-            print(f"{Color.DARK_PURPLE}正在调用 ASR 引擎生成逐字稿...")
+            print(f"正在调用 ASR 引擎生成逐字稿...")
             _t0 = time.time()
             transcript_text = asr_engine.recognize(audio_path)
             _elapsed = time.time() - _t0
@@ -109,7 +109,7 @@ class TwoPassProofreadPipeline:
             print(f"{Color.GREEN}逐字稿已保存至: {transcript_filename}")
 
         # ── 步骤 1：初次校对稿 ──────────────
-        print(f"\n{Color.DARK_PURPLE}[1/4] 正在生成初次校对稿（不参考原文）...")
+        print(f"\n[1/4] 正在生成初次校对稿（不参考原文）...")
         if draft_filename.exists():
             print(f"{Color.GREEN}✅ 检测到已存在初次校对稿，直接复用: {draft_filename.name}")
             draft_text = draft_filename.read_text("utf-8")
@@ -135,7 +135,7 @@ class TwoPassProofreadPipeline:
         print(f"{Color.ORANGE}📊 字数统计：初次校对稿 {len(draft_text)} / 逐字稿 {len(transcript_text)} = {draft_ratio:.1f}%{Color.END}")
 
         # ── 步骤 2：精准原文 ────────────────
-        print(f"\n{Color.DARK_PURPLE}[2/4] 正在从模糊原文中提取精准原文...")
+        print(f"\n[2/4] 正在从模糊原文中提取精准原文...")
         if precision_filename.exists():
             print(f"{Color.GREEN}✅ 检测到已存在精准原文，直接复用: {precision_filename.name}")
             precision_text = precision_filename.read_text("utf-8")
@@ -152,13 +152,11 @@ class TwoPassProofreadPipeline:
             _total_time += _elapsed
             print(f"{Color.GREEN}⏱️ 精准原文提取耗时: {self._format_time(_elapsed)}")
             self._save_thinking("精准原文", parent_dir, refine_engine)
-            precision_text = precision_text.replace("『", "").replace("』", "").replace("\n", "").strip()
-            print(f"{Color.GREEN}✅ 后处理：已清理 『』、换行符{Color.END}")
             precision_filename.write_text(precision_text, encoding="utf-8")
             print(f"{Color.GREEN}精准原文已保存至: {precision_filename.name}")
 
         # ── 步骤 3：最终校对稿 ──────────────
-        print(f"\n{Color.DARK_PURPLE}[3/4] 正在使用精准原文生成最终校对稿...")
+        print(f"\n[3/4] 正在使用精准原文生成最终校对稿...")
         if final_filename.exists():
             print(f"{Color.GREEN}✅ 检测到已存在校对稿，直接复用: {final_filename.name}")
             final_text = final_filename.read_text("utf-8")
@@ -188,7 +186,7 @@ class TwoPassProofreadPipeline:
         print(f"{Color.GREEN}⏱️ 本次全部模型调用总耗时: {self._format_time(_total_time)}")
 
         # ── 补充元数据 ─────────────────────
-        print(f"\n{Color.DARK_PURPLE}[4/4] 准备补充元数据信息...")
+        print(f"\n[4/4] 准备补充元数据信息...")
         current_text = final_filename.read_text("utf-8")
         if current_text.strip().startswith("> 标题："):
             print(f"{Color.GREEN}✅ 检测到校对稿已包含元数据，跳过。")
@@ -224,6 +222,7 @@ class TwoPassProofreadPipeline:
         if choice != "y":
             print(f"{Color.RED}❌ 用户终止。{Color.END}")
             exit(0)
+        print(f"{Color.GREEN}✅ 继续执行【{label}】...{Color.END}")
 
     @staticmethod
     def _get_audio_duration(audio_path):

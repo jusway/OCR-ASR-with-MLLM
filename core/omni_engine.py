@@ -28,14 +28,14 @@ class GeminiOmni(BaseASR):
         self.top_p = top_p
 
     def recognize(self, audio_file_path: str, system_prompt: str = "", prompt: str = "") -> str:
-        print(f"{Color.DARK_PURPLE}[Gemini] 正在处理音频文件: {audio_file_path}")
+        print(f"[Gemini] 正在处理音频文件: {audio_file_path}")
         
         # 统一进行压缩，压缩后的临时文件自带纯英文路径，顺便解决了 httpx 的中文路径报错问题
         processed_audio_path, is_temp = self._compress_audio(audio_file_path)
         audio_file = None
             
         try:
-            print(f"{Color.DARK_PURPLE}[Gemini] 正在上传压缩后的音频文件...")
+            print(f"[Gemini] 正在上传压缩后的音频文件...")
             audio_file = self.client.files.upload(file=processed_audio_path)
 
             while audio_file.state.name == "PROCESSING":
@@ -55,8 +55,8 @@ class GeminiOmni(BaseASR):
             max_retries = 5
             for attempt in range(max_retries):
                 try:
-                    print(f"{Color.DARK_PURPLE}[Gemini] 正在提交给模型处理 (尝试 {attempt + 1}/{max_retries})...")
-                    print(f"{Color.DARK_PURPLE}[Gemini] ⏳ 提示：长音频（如1小时）需要2-5分钟的深度理解时间，请耐心等待模型思考，不要关闭程序...")
+                    print(f"[Gemini] 正在提交给模型处理 (尝试 {attempt + 1}/{max_retries})...")
+                    print(f"[Gemini] ⏳ 提示：长音频（如1小时）需要2-5分钟的深度理解时间，请耐心等待模型思考，不要关闭程序...")
                     
                     start_wait_time = time.time()
                     response_stream = self.client.models.generate_content_stream(
@@ -123,7 +123,7 @@ class MiMoOmni(BaseASR):
         self.top_p = top_p
 
     def recognize(self, audio_file_path: str, system_prompt: str = "", prompt: str = "") -> str:
-        print(f"{Color.DARK_PURPLE}[MiMo] 正在处理音频文件: {audio_file_path}")
+        print(f"[MiMo] 正在处理音频文件: {audio_file_path}")
 
         uploader = OSSAudioUploader()
         original_filename = os.path.basename(audio_file_path)
@@ -156,8 +156,8 @@ class MiMoOmni(BaseASR):
                 }
             ]
 
-            print(f"{Color.DARK_PURPLE}[MiMo] 正在提交给模型处理...")
-            print(f"{Color.DARK_PURPLE}[MiMo] ⏳ 提示：长音频（如1小时）需要较长时间的深度理解，请耐心等待模型思考，不要关闭程序...")
+            print(f"[MiMo] 正在提交给模型处理...")
+            print(f"[MiMo] ⏳ 提示：长音频（如1小时）需要较长时间的深度理解，请耐心等待模型思考，不要关闭程序...")
 
             max_retries = 6
             for attempt in range(max_retries):
@@ -249,7 +249,7 @@ class Qwen3OmniFlash(BaseASR):
         self.api_url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 
     def recognize(self, audio_file_path: str, system_prompt: str = "", prompt: str = "") -> str:
-        print(f"{Color.DARK_PURPLE}[Qwen3OmniFlash] 正在处理音频文件: {audio_file_path}")
+        print(f"[Qwen3OmniFlash] 正在处理音频文件: {audio_file_path}")
 
         uploader = OSSAudioUploader()
         original_filename = os.path.basename(audio_file_path)
@@ -296,8 +296,8 @@ class Qwen3OmniFlash(BaseASR):
                 "X-DashScope-OssResourceResolve": "enable"  # 允许解析 OSS 等临时链接
             }
 
-            print(f"{Color.DARK_PURPLE}[Qwen3OmniFlash] 正在提交给模型处理...")
-            print(f"{Color.DARK_PURPLE}[Qwen3OmniFlash] ⏳ 提示：长音频需要较长时间的深度理解，请耐心等待模型思考，不要关闭程序...")
+            print(f"[Qwen3OmniFlash] 正在提交给模型处理...")
+            print(f"[Qwen3OmniFlash] ⏳ 提示：长音频需要较长时间的深度理解，请耐心等待模型思考，不要关闭程序...")
 
             max_retries = 6
             for attempt in range(max_retries):
@@ -389,7 +389,7 @@ class Qwen3_5Omni(BaseASR):
         self.api_url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 
     def recognize(self, audio_file_path: str, system_prompt: str = "", prompt: str = "") -> str:
-        print(f"{Color.DARK_PURPLE}[Qwen] 正在处理音频文件: {audio_file_path}")
+        print(f"[Qwen] 正在处理音频文件: {audio_file_path}")
 
         uploader = OSSAudioUploader()
         original_filename = os.path.basename(audio_file_path)
@@ -437,8 +437,8 @@ class Qwen3_5Omni(BaseASR):
                 "X-DashScope-OssResourceResolve": "enable"  # 允许解析 OSS 等临时链接
             }
 
-            print(f"{Color.DARK_PURPLE}[Qwen] 正在提交给模型处理...")
-            print(f"{Color.DARK_PURPLE}[Qwen] ⏳ 提示：长音频（如1小时）需要较长时间的深度理解，请耐心等待模型思考，不要关闭程序...")
+            print(f"[Qwen] 正在提交给模型处理...")
+            print(f"[Qwen] ⏳ 提示：长音频（如1小时）需要较长时间的深度理解，请耐心等待模型思考，不要关闭程序...")
 
             max_retries = 6
             for attempt in range(max_retries):

@@ -25,7 +25,7 @@ class BatchTranscriptionPipeline:
             exit(1)
 
         print(f"{Color.GREEN}找到 {len(audio_files)} 个音频文件")
-        print(f"{Color.DARK_PURPLE}使用 {type(self.asr_engine).__name__} ASR 引擎")
+        print(f"使用 {type(self.asr_engine).__name__} ASR 引擎")
 
         completed = 0
         total_seconds = 0.0
@@ -36,7 +36,7 @@ class BatchTranscriptionPipeline:
                 print(f"{Color.GREEN}[{audio_path.stem}] 逐字稿已存在，跳过")
                 continue
 
-            print(f"{Color.DARK_PURPLE}[{audio_path.stem}] 正在转录...")
+            print(f"[{audio_path.stem}] 正在转录...")
             transcript_text = self.asr_engine.recognize(str(audio_path.resolve()))
             transcript_path.write_text(transcript_text, "utf-8")
             print(f"{Color.GREEN}[{audio_path.stem}] 逐字稿已保存")

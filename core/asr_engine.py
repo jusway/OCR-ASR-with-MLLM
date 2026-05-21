@@ -47,7 +47,7 @@ class Qwen3ASRFlashFiletrans(BaseASR):
         dashscope.api_key = self.api_key
 
     def recognize(self, audio_file_path: str) -> str:
-        print(f"{Color.DARK_PURPLE}[Qwen3ASRFlash] 正在处理音频文件: {audio_file_path}")
+        print(f"[Qwen3ASRFlash] 正在处理音频文件: {audio_file_path}")
 
         uploader = OSSAudioUploader()
         original_filename = os.path.basename(audio_file_path)
@@ -62,7 +62,7 @@ class Qwen3ASRFlashFiletrans(BaseASR):
             processed_audio_path, is_temp = self._compress_audio(audio_file_path)
             signed_url, object_key = uploader.upload(processed_audio_path, filename=target_filename)
 
-            print(f"{Color.DARK_PURPLE}[Qwen3ASRFlash] 正在提交异步转录任务...")
+            print(f"[Qwen3ASRFlash] 正在提交异步转录任务...")
             
             # 使用 SDK 提交异步任务
             task_response = QwenTranscription.async_call(
@@ -75,7 +75,7 @@ class Qwen3ASRFlashFiletrans(BaseASR):
                 raise RuntimeError(f"提交任务失败! HTTP code: {task_response.status_code}, Response: {task_response}")
 
             task_id = task_response.output.task_id
-            print(f"{Color.DARK_PURPLE}[Qwen3ASRFlash] 任务已提交，task_id: {task_id}。正在等待任务完成...")
+            print(f"[Qwen3ASRFlash] 任务已提交，task_id: {task_id}。正在等待任务完成...")
 
             # 使用 SDK 的 wait 方法自动轮询等待结果（含重试）
             for attempt in range(5):
@@ -171,7 +171,7 @@ class MiMoLocalASR(BaseASR):
     def health_check(self, timeout: int = 120, interval: int = 2) -> bool:
         """等待 ASR 服务就绪，成功返回 True，超时返回 False"""
         base = self.base_url
-        print(f"{Color.DARK_PURPLE}[MiMoLocalASR] ⏳ 等待服务就绪（{base}）...", end="", flush=True)
+        print(f"[MiMoLocalASR] ⏳ 等待服务就绪（{base}）...", end="", flush=True)
         for _ in range(timeout // interval):
             try:
                 resp = requests.get(f"{base}/health", timeout=5)
@@ -192,8 +192,8 @@ class MiMoLocalASR(BaseASR):
 
         # 将 Windows 路径转为 WSL 路径（服务跑在 WSL 中）
         wsl_path = self._to_wsl_path(audio_file_path)
-        print(f"{Color.DARK_PURPLE}[MiMoLocalASR] 正在调用本地 ASR 服务: {audio_file_path}")
-        print(f"{Color.DARK_PURPLE}   → WSL 路径: {wsl_path}")
+        print(f"[MiMoLocalASR] 正在调用本地 ASR 服务: {audio_file_path}")
+        print(f"   → WSL 路径: {wsl_path}")
 
         try:
             resp = requests.post(
@@ -234,7 +234,7 @@ class DoubaoASR(BaseASR):
         self.resource_id = "volc.seedasr.auc"
 
     def recognize(self, audio_file_path: str) -> str:
-        print(f"{Color.DARK_PURPLE}[DoubaoASR] 正在处理音频文件: {audio_file_path}")
+        print(f"[DoubaoASR] 正在处理音频文件: {audio_file_path}")
 
         uploader = OSSAudioUploader()
         original_filename = os.path.basename(audio_file_path)
@@ -249,7 +249,7 @@ class DoubaoASR(BaseASR):
             processed_audio_path, is_temp = self._compress_audio(audio_file_path)
             signed_url, object_key = uploader.upload(processed_audio_path, filename=target_filename)
 
-            print(f"{Color.DARK_PURPLE}[DoubaoASR] 正在提交异步转录任务...")
+            print(f"[DoubaoASR] 正在提交异步转录任务...")
             
             submit_url = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit"
             task_id = str(uuid.uuid4())
@@ -283,7 +283,7 @@ class DoubaoASR(BaseASR):
                 raise RuntimeError(f"提交任务失败! Headers: {response.headers}, Body: {response.text}")
 
             x_tt_logid = response.headers.get("X-Tt-Logid", "")
-            print(f"{Color.DARK_PURPLE}[DoubaoASR] 任务已提交，task_id: {task_id}。正在等待任务完成...")
+            print(f"[DoubaoASR] 任务已提交，task_id: {task_id}。正在等待任务完成...")
 
             query_url = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/query"
             query_headers = {
