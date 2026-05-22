@@ -179,6 +179,11 @@ class TwoPassProofreadPipeline:
                 self._save_thinking("正文提取", parent_dir, extract_engine)
                 main_body_filename.write_text(main_body, encoding="utf-8")
                 print(f"{Color.GREEN}✅ 摩诃止观正文已缓存至: {main_body_filename.name}{Color.END}")
+        # 后处理：去掉所有 *（处理缓存中可能残留的情况）
+        if main_body and "*" in main_body:
+            main_body = main_body.replace("*", "")
+            main_body_filename.write_text(main_body, encoding="utf-8")
+            print(f"{Color.GREEN}✅ 后处理：已清理正文中的 *{Color.END}")
 
         # ── 步骤 3：最终校对稿 ──────────────
         print(f"\n[3/4] 正在使用精准原文生成最终校对稿...")
@@ -222,12 +227,15 @@ class TwoPassProofreadPipeline:
         # ── 补充元数据 ─────────────────────
         print(f"\n[4/4] 准备补充元数据信息...")
         current_text = final_filename.read_text("utf-8")
+        # 去掉旧元数据（如果有），始终用本次数据替换
         if current_text.strip().startswith("> 标题："):
-            print(f"{Color.GREEN}✅ 检测到校对稿已包含元数据，跳过。")
-        else:
-            duration = self._get_audio_duration(audio_path)
-            main_body_header = f"> 摩诃止观正文：{main_body}\n" if main_body else ""
-            metadata_header = (
+            print(f"{Color.ORANGE}♻️ 检测到已有旧元数据，替换为本次元数据...{Color.END}")
+            # 跳过元数据头部（到第一个 --- 之后）
+            parts = current_text.split("\n---\n\n", 1)
+            current_text = parts[1] if len(parts) > 1 else current_text
+        duration = self._get_audio_duration(audio_path)
+        main_body_header = f"> 摩诃止观正文：{main_body}\n" if main_body else ""
+        metadata_header = (
                 f"> 标题：{base_name}\n"
                 f"> 时间：{year}\n"
                 f"> 时长：{duration}\n"
@@ -235,11 +243,11 @@ class TwoPassProofreadPipeline:
                 f"{main_body_header}"
                 "\n---\n\n"
             )
-            final_filename.write_text(metadata_header + current_text, encoding="utf-8")
-            print(f"{Color.GREEN}✅ 元数据已成功插入校对稿开头！{Color.END}")
-            if main_body:
-                print(f"{Color.ORANGE}📄 以下为插入的摩诃止观正文：{Color.END}")
-                print(main_body)
+        final_filename.write_text(metadata_header + current_text, encoding="utf-8")
+        print(f"{Color.GREEN}✅ 元数据已成功插入校对稿开头！{Color.END}")
+        if main_body:
+            print(f"{Color.ORANGE}📄 以下为插入的摩诃止观正文：{Color.END}")
+            print(main_body)
 
         print(f"\n{Color.GREEN}===========================================")
         print("🎉 全部流程处理完成！")
