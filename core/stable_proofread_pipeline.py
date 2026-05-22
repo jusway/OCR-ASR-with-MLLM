@@ -26,12 +26,15 @@ class TwoPassProofreadPipeline:
             draft_model_key,
             refine_model_key,
             final_model_key,
+            extract_model_key=None,
             draft_sys_prompt="",
             draft_user_prompt_template="",
             refine_sys_prompt="",
             refine_user_prompt_template="",
             final_sys_prompt="",
             final_user_prompt_template="",
+            extract_sys_prompt="",
+            extract_user_prompt_template="",
             refine_example_text="",
             example_text="",
             debug=False):
@@ -64,6 +67,7 @@ class TwoPassProofreadPipeline:
         draft_engine = _init("① 初次校对", draft_model_key)
         refine_engine = _init("② 精准原文", refine_model_key)
         final_engine = _init("③ 最终校对", final_model_key)
+        extract_engine = _init("正文提取", extract_model_key) if extract_model_key else None
 
         # ── 开始执行 ───────────────────────
         audio_path_obj = Path(audio_path)
@@ -155,8 +159,26 @@ class TwoPassProofreadPipeline:
             precision_filename.write_text(precision_text, encoding="utf-8")
             print(f"{Color.GREEN}精准原文已保存至: {precision_filename.name}")
 
-        # ── 提取 ** 包裹的摩诃止观正文 ──────
-        main_body = "".join(re.findall(r"\*\*(.*?)\*\*", precision_text))
+        # ── 提取摩诃止观正文 ────────────────
+        print(f"\n[2.5/4] 正在提取摩诃止观正文...")
+        main_body_filename = parent_dir / f"{base_name}_摩诃止观正文.md"
+        main_body = ""
+        if extract_engine and extract_sys_prompt and extract_user_prompt_template:
+            if main_body_filename.exists():
+                main_body = main_body_filename.read_text("utf-8").strip()
+                print(f"{Color.GREEN}✅ 检测到已存在摩诃止观正文，直接复用: {main_body_filename.name}{Color.END}")
+            else:
+                extract_prompt = extract_user_prompt_template.format(
+                    precision_text=precision_text,
+                )
+                _t0 = time.time()
+                main_body = extract_engine.generate(extract_sys_prompt, extract_prompt).strip()
+                _elapsed = time.time() - _t0
+                _total_time += _elapsed
+                print(f"{Color.GREEN}⏱️ 正文提取耗时: {self._format_time(_elapsed)}")
+                self._save_thinking("正文提取", parent_dir, extract_engine)
+                main_body_filename.write_text(main_body, encoding="utf-8")
+                print(f"{Color.GREEN}✅ 摩诃止观正文已缓存至: {main_body_filename.name}{Color.END}")
 
         # ── 步骤 3：最终校对稿 ──────────────
         print(f"\n[3/4] 正在使用精准原文生成最终校对稿...")
@@ -193,9 +215,7 @@ class TwoPassProofreadPipeline:
             final_filename.write_text(final_text, encoding="utf-8")
             print(f"{Color.GREEN}最终校对稿已保存至: {final_filename.name}")
 
-        # ── 浓缩率统计 ─────────────────────
-        final_ratio = len(final_text) / len(transcript_text) * 100
-        print(f"{Color.ORANGE}📊 字数统计：校对稿 {len(final_text)} / 逐字稿 {len(transcript_text)} = {final_ratio:.1f}%")
+        # 浓缩率已在循环内处理，此处不再重复打印
 
         print(f"{Color.GREEN}⏱️ 本次全部模型调用总耗时: {self._format_time(_total_time)}")
 
