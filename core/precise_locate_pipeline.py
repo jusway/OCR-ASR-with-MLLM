@@ -161,6 +161,7 @@ class PreciseLocatePipeline:
         # ── 步骤1：末尾定位 ────────────
         print(f"\n[1/4] 正在定位讲稿末尾对应的原文...")
         locate_engine = _init("末尾定位", locate_model_key)
+        no_body_extract = False
         if precision_filename.exists():
             print(f"{Color.GREEN}✅ 检测到已存在精准原文，直接复用: {precision_filename.name}{Color.END}")
             precision_text = precision_filename.read_text("utf-8")
@@ -184,13 +185,20 @@ class PreciseLocatePipeline:
             locate_out_filename.write_text(last_sentence, encoding="utf-8")
             print(f"{Color.GREEN}✅ 末尾已保存至: {locate_out_filename.name}{Color.END}")
 
-            # 在模糊原文中找到这句的边界
-            idx = fuzzy_reference_text.find(last_sentence)
-            if idx == -1:
-                print(f"{Color.RED}❌ 未在模糊原文中找到末尾，模型返回的结果不正确。请检查末尾定位结果后重试。{Color.END}")
-                print(f"{Color.RED}末尾定位文件: {locate_out_filename.name}{Color.END}")
-                exit(1)
+            # 模型无法匹配的特殊标记 → 精准原文和正文置空，流程继续
+            if last_sentence == "【无匹配片段】":
+                print(f"{Color.ORANGE}⚠️ 模型返回「无匹配片段」，精准原文和正文将为空。{Color.END}")
+                precision_text = "暂无参考资料"
+                precise_body = ""
+                no_body_extract = True
             else:
+                no_body_extract = False
+                # 在模糊原文中找到这句的边界
+                idx = fuzzy_reference_text.find(last_sentence)
+                if idx == -1:
+                    print(f"{Color.RED}❌ 未在模糊原文中找到末尾，模型返回的结果不正确。请检查末尾定位结果后重试。{Color.END}")
+                    print(f"{Color.RED}末尾定位文件: {locate_out_filename.name}{Color.END}")
+                    exit(1)
                 end_pos = idx + len(last_sentence)
                 precision_text = fuzzy_reference_text[:end_pos]
 
@@ -200,7 +208,10 @@ class PreciseLocatePipeline:
 
         # ── 提取精准原文中的摩诃止观正文 ──
         precise_body_fn = parent_dir / "第1步_精准原文_正文.md"
-        if precise_body_fn.exists():
+        if no_body_extract:
+            # 已在上面置空，跳过提取，只写文件
+            precise_body_fn.write_text(precise_body, encoding="utf-8")
+        elif precise_body_fn.exists():
             precise_body = precise_body_fn.read_text("utf-8").strip()
             print(f"{Color.GREEN}✅ 检测到已存在精准原文正文，直接复用: {precise_body_fn.name}{Color.END}")
         else:
