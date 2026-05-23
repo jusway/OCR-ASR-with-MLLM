@@ -13,7 +13,8 @@ class DoubaoText(BaseTextModel):
             raise ValueError("未找到 ARK_API_KEY，请设置环境变量。")
         self.client = OpenAI(
             api_key=self.api_key,
-            base_url="https://ark.cn-beijing.volces.com/api/v3"
+            base_url="https://ark.cn-beijing.volces.com/api/v3",
+            timeout=600.0,
         )
 
     def generate(self, system_prompt: str, prompt: str) -> str:

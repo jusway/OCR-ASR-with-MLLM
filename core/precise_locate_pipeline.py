@@ -76,9 +76,9 @@ class PreciseLocatePipeline:
         # ── 前置：模糊原文 ──────────────────
         if not fuzzy_filename.exists():
             fuzzy_filename.write_text("", encoding="utf-8")
-            print(f"{Color.GREEN}✅ 已创建 {fuzzy_filename}")
+            print(f"{Color.GREEN}✅ 已创建 {fuzzy_filename}{Color.END}")
         else:
-            print(f"{Color.GREEN}检测到已存在 {fuzzy_filename.name}")
+            print(f"检测到已存在 {fuzzy_filename.name}")
         duration = self._get_audio_duration(audio_path)
         print(f"{Color.ORANGE}⏱️ 音频时长: {duration}，供参考选取原文范围{Color.END}")
         print(f"请在 {fuzzy_filename.name} 中整理模糊原文（开头已有上节课结尾，只需粘贴即可），保存后回到此处按回车继续...")
@@ -105,10 +105,17 @@ class PreciseLocatePipeline:
 
         _total_time = 0.0
 
+        def _save_thinking(step_prefix, engine, label):
+            if hasattr(engine, '_last_reasoning_content') and engine._last_reasoning_content:
+                thinking_path = parent_dir / f"{step_prefix}思维链_{label}.md"
+                thinking_path.write_text(engine._last_reasoning_content, encoding="utf-8")
+                engine._last_reasoning_content = None
+                print(f"{Color.GREEN}🧠 思维链已保存: {thinking_path.name}{Color.END}")
+
         # ── 步骤0：ASR 转录（带缓存）─────
         print(f"\n[0/4] 开始处理整段音频转录...")
         if transcript_filename.exists():
-            print(f"{Color.GREEN}✅ 检测到已存在逐字稿，直接复用: {transcript_filename.name}")
+            print(f"{Color.GREEN}✅ 检测到已存在逐字稿，直接复用: {transcript_filename.name}{Color.END}")
             transcript_text = transcript_filename.read_text("utf-8")
         else:
             print("正在调用 ASR 引擎生成逐字稿...")
@@ -116,9 +123,9 @@ class PreciseLocatePipeline:
             transcript_text = asr_engine.recognize(audio_path)
             _elapsed = time.time() - _t0
             _total_time += _elapsed
-            print(f"{Color.GREEN}⏱️ ASR 转录耗时: {self._format_time(_elapsed)}")
+            print(f"⏱️ ASR 转录耗时: {self._format_time(_elapsed)}")
             transcript_filename.write_text(transcript_text, encoding="utf-8")
-            print(f"{Color.GREEN}逐字稿已保存至: {transcript_filename}")
+            print(f"{Color.GREEN}逐字稿已保存至: {transcript_filename}{Color.END}")
 
         # ── 步骤0.5：初次校对稿 ──────────
         draft_text = transcript_text  # 默认不校对
@@ -136,16 +143,18 @@ class PreciseLocatePipeline:
                     transcript_text=transcript_text,
                     example_text=example_text,
                 )
+                print("调用中...")
                 _t0 = time.time()
                 draft_text = draft_engine.generate(draft_sys_prompt, draft_prompt)
                 _elapsed = time.time() - _t0
                 _total_time += _elapsed
-                print(f"{Color.GREEN}⏱️ 初次校对耗时: {self._format_time(_elapsed)}")
+                _save_thinking("第0.5步_", draft_engine, "初次校对")
+                print(f"⏱️ 初次校对耗时: {self._format_time(_elapsed)}")
                 if draft_text.startswith("【校对稿】"):
                     draft_text = draft_text[len("【校对稿】"):].strip()
                     print(f"{Color.GREEN}✅ 后处理：已去掉【校对稿】前缀{Color.END}")
                 draft_filename.write_text(draft_text, encoding="utf-8")
-                print(f"{Color.GREEN}初次校对稿已保存至: {draft_filename.name}")
+                print(f"{Color.GREEN}初次校对稿已保存至: {draft_filename.name}{Color.END}")
                 draft_ratio = len(draft_text) / len(transcript_text) * 100
                 print(f"{Color.ORANGE}📊 字数统计：初次校对稿 {len(draft_text)} / 逐字稿 {len(transcript_text)} = {draft_ratio:.1f}%{Color.END}")
 
@@ -153,7 +162,7 @@ class PreciseLocatePipeline:
         print(f"\n[1/4] 正在定位讲稿末尾对应的原文...")
         locate_engine = _init("末尾定位", locate_model_key)
         if precision_filename.exists():
-            print(f"{Color.GREEN}✅ 检测到已存在精准原文，直接复用: {precision_filename.name}")
+            print(f"{Color.GREEN}✅ 检测到已存在精准原文，直接复用: {precision_filename.name}{Color.END}")
             precision_text = precision_filename.read_text("utf-8")
         else:
             self._confirm_step("末尾定位", debug)
@@ -163,11 +172,13 @@ class PreciseLocatePipeline:
                 fuzzy_reference_text=fuzzy_reference_text,
                 last_n_chars=last_n_chars,
             )
+            print("调用中...")
             _t0 = time.time()
             last_sentence = locate_engine.generate(locate_sys_prompt, locate_prompt).strip()
             _elapsed = time.time() - _t0
             _total_time += _elapsed
-            print(f"{Color.GREEN}⏱️ 末尾定位耗时: {self._format_time(_elapsed)}")
+            _save_thinking("第1步_", locate_engine, "末尾定位")
+            print(f"⏱️ 末尾定位耗时: {self._format_time(_elapsed)}")
             # 模型返回末尾结果已保存至文件，不在控制台重复打印
             locate_out_filename = parent_dir / f"第1步_{base_name}_末尾定位.md"
             locate_out_filename.write_text(last_sentence, encoding="utf-8")
@@ -209,7 +220,7 @@ class PreciseLocatePipeline:
         print(f"\n[2/4] 正在生成最终校对稿...")
         final_engine = _init("最终校对", final_model_key)
         if final_filename.exists():
-            print(f"{Color.GREEN}✅ 检测到已存在最终校对稿，直接复用: {final_filename.name}")
+            print(f"{Color.GREEN}✅ 检测到已存在最终校对稿，直接复用: {final_filename.name}{Color.END}")
             final_text = final_filename.read_text("utf-8")
             _ratio_cache = len(final_text) / len(transcript_text) * 100
             print(f"{Color.ORANGE}📊 字数统计：最终校对稿 {len(final_text)} / 逐字稿 {len(transcript_text)} = {_ratio_cache:.1f}%{Color.END}")
@@ -219,11 +230,13 @@ class PreciseLocatePipeline:
                 precision_text=precision_text,
                 transcript_text=transcript_text,
             )
+            print("调用中...")
             _t0 = time.time()
             final_text = final_engine.generate(final_sys_prompt, final_prompt)
             _elapsed = time.time() - _t0
             _total_time += _elapsed
-            print(f"{Color.GREEN}⏱️ 最终校对稿模型调用耗时: {self._format_time(_elapsed)}")
+            _save_thinking("第2步_", final_engine, "最终校对")
+            print(f"⏱️ 最终校对稿模型调用耗时: {self._format_time(_elapsed)}")
             if final_text.startswith("【校对稿】"):
                 final_text = final_text[len("【校对稿】"):].strip()
                 print(f"{Color.GREEN}✅ 后处理：已去掉【校对稿】前缀{Color.END}")
@@ -235,15 +248,17 @@ class PreciseLocatePipeline:
                 if _ratio >= 50.0 or retry == 2:
                     break
                 print(f"{Color.ORANGE}⚠️ 浓缩率 {_ratio:.1f}% 低于 50%，第 {retry + 2} 次重试...{Color.END}")
+                print("调用中...")
                 _t0 = time.time()
                 final_text = final_engine.generate(final_sys_prompt, final_prompt)
                 _elapsed = time.time() - _t0
                 _total_time += _elapsed
+                _save_thinking("第2步_", final_engine, "最终校对")
                 if final_text.startswith("【校对稿】"):
                     final_text = final_text[len("【校对稿】"):].strip()
 
             final_filename.write_text(final_text, encoding="utf-8")
-            print(f"{Color.GREEN}最终校对稿已保存至: {final_filename.name}")
+            print(f"{Color.GREEN}最终校对稿已保存至: {final_filename.name}{Color.END}")
 
         # ── 步骤3：遗漏检查 ──────────────
         check_filename = parent_dir / f"第3步_{base_name}_遗漏检查.md"
@@ -259,11 +274,13 @@ class PreciseLocatePipeline:
                     transcript_text=transcript_text,
                     written_text=final_text,
                 )
+                print("调用中...")
                 _t0 = time.time()
                 check_report = check_engine.generate(check_sys_prompt, check_prompt)
                 _elapsed = time.time() - _t0
                 _total_time += _elapsed
-                print(f"{Color.GREEN}⏱️ 遗漏检查耗时: {self._format_time(_elapsed)}")
+                _save_thinking("第3步_", check_engine, "遗漏检查")
+                print(f"⏱️ 遗漏检查耗时: {self._format_time(_elapsed)}")
                 check_filename.write_text(check_report, encoding="utf-8")
                 print(f"{Color.GREEN}✅ 遗漏检查报告已保存至: {check_filename.name}{Color.END}")
                 # 根据报告内容标记状态
@@ -293,12 +310,12 @@ class PreciseLocatePipeline:
         final_filename.write_text(metadata_header + current_text, encoding="utf-8")
         print(f"{Color.GREEN}✅ 元数据已成功插入校对稿开头！{Color.END}")
         if main_body:
-            print(f"{Color.ORANGE}📄 以下为插入的摩诃止观正文：{Color.END}")
+            print("📄 以下为插入的摩诃止观正文：")
             print(main_body_header.replace("> 摩诃止观正文：", "").strip())
 
-        print(f"{Color.GREEN}⏱️ 本次全部模型调用总耗时: {self._format_time(_total_time)}{Color.END}")
-        print(f"\n{Color.GREEN}===========================================")
-        print("🎉 全部流程处理完成！")
+        print(f"⏱️ 本次全部模型调用总耗时: {self._format_time(_total_time)}")
+        print(f"\n===========================================")
+        print(f"{Color.GREEN}🎉 全部流程处理完成！{Color.END}")
         print(f"💡 最终文件列表：")
         print(f"  - 逐字稿: {transcript_filename.name}")
         print(f"  - 初次校对稿: {draft_filename.name}")

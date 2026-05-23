@@ -17,7 +17,8 @@ class NvidiaText(BaseTextModel):
             raise ValueError("未找到 NVIDIA_API_KEY，请设置环境变量。")
         self.client = OpenAI(
             api_key=self.api_key,
-            base_url="https://integrate.api.nvidia.com/v1"
+            base_url="https://integrate.api.nvidia.com/v1",
+            timeout=600.0,
         )
 
     def _get_kwargs(self, messages: list, stream: bool) -> dict:

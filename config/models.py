@@ -10,11 +10,17 @@ AVAILABLE_MODELS = {
         "model_name": "deepseek-v4-pro",
         "enable_thinking": False,
     }),
-    "deepseek-pro-high": (DeepSeekText, {
+    "deepseek-pro-nothink-stable": (DeepSeekText, {
+        "model_name": "deepseek-v4-pro",
+        "enable_thinking": False,
+        "temperature": 0.0,
+        "top_p": 1.0,
+    }),
+    "deepseek-pro-thinking-high": (DeepSeekText, {
         "model_name": "deepseek-v4-pro",
         "enable_thinking": True, "reasoning_effort": "high",
     }),
-    "deepseek-pro-max": (DeepSeekText, {
+    "deepseek-pro-thinking-max": (DeepSeekText, {
         "model_name": "deepseek-v4-pro",
         "enable_thinking": True, "reasoning_effort": "max",
     }),
@@ -23,16 +29,16 @@ AVAILABLE_MODELS = {
         "model_name": "deepseek-v4-flash",
         "enable_thinking": False,
     }),
-    "deepseek-flash-high": (DeepSeekText, {
+    "deepseek-flash-thinking-high": (DeepSeekText, {
         "model_name": "deepseek-v4-flash",
         "enable_thinking": True, "reasoning_effort": "high",
     }),
-    "deepseek-flash-max": (DeepSeekText, {
+    "deepseek-flash-thinking-max": (DeepSeekText, {
         "model_name": "deepseek-v4-flash",
         "enable_thinking": True, "reasoning_effort": "max",
     }),
     # ── Kimi K2.6（推荐，可开关思考）──
-    "kimi-k2.6": (KimiText, {
+    "kimi-k2.6-thinking": (KimiText, {
         "model_name": "kimi-k2.6",
     }),
     "kimi-k2.6-nothink": (KimiText, {
@@ -40,7 +46,7 @@ AVAILABLE_MODELS = {
         "enable_thinking": False,
     }),
     # ── Kimi K2.5（同 K2.6 但次强）──
-    "kimi-k2.5": (KimiText, {
+    "kimi-k2.5-thinking": (KimiText, {
         "model_name": "kimi-k2.5",
     }),
     "kimi-k2.5-nothink": (KimiText, {
