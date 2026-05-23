@@ -46,7 +46,7 @@ class PreciseLocatePipeline:
         # ── 初始化引擎 ─────────────────────
         def _init(label, key):
             cls, kwargs = available_models[key]
-            print(f"正在初始化 {cls.__name__} 引擎 ({key} -> {kwargs['model_name']})...")
+            print(f"正在初始化 {cls.__name__} 引擎 ({key})...")
             return cls(**kwargs)
 
         if not folder_path.exists():
@@ -193,9 +193,11 @@ class PreciseLocatePipeline:
             precise_body = precise_body_fn.read_text("utf-8").strip()
             print(f"{Color.GREEN}✅ 检测到已存在精准原文正文，直接复用: {precise_body_fn.name}{Color.END}")
         else:
+            # 先剔除 [注脚：...] 块（含跨行），再扫 *** 提取正文
+            clean_text = re.sub(r'\[注脚：.*?\]', '', precision_text, flags=re.DOTALL)
             precise_body_parts = []
-            for line in precision_text.splitlines():
-                if "***" in line:
+            for line in clean_text.splitlines():
+                if "**" in line:
                     clean = re.sub(r'[\*\\]', '', line).strip()
                     if clean:
                         precise_body_parts.append(clean)
