@@ -21,16 +21,17 @@ asr_model_name = "qwen3-asr-flash-filetrans"
 #    Pro = deepseek-v4-pro, Flash = deepseek-v4-flash
 #    思考模式 effort: max / high；非思考模式无需 reasoning_effort
 #    加新模型只改 config/models.py，不改入口脚本
-COVERAGE_SELECTED_MODEL = "pro-high"
-SELECTED_MODEL = "pro-nothink"
-VERIFIER_SELECTED_MODEL = "pro-nothink"
-EXTRACT_SELECTED_MODEL = "pro-high"
+COVERAGE_SELECTED_MODEL = "deepseek-pro-high"
+SELECTED_MODEL = "deepseek-pro-nothink"
+VERIFIER_SELECTED_MODEL = "deepseek-pro-nothink"
+EXTRACT_SELECTED_MODEL = "deepseek-pro-high"
 
 # 优秀案例（从 优秀案例.md 读取，作为 one-shot 示例拼接在逐字稿前）
 example_path = Path("../docs/优秀案例.md")
 example_text = example_path.read_text("utf-8").strip() if example_path.exists() else ""
 
 # 覆盖度检查
+# 很容易误判
 coverage_system_prompt = """\
 你是一位严谨的审核员。
 """

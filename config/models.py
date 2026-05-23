@@ -5,29 +5,29 @@
 from core.text_engine import DeepSeekText, KimiText
 
 AVAILABLE_MODELS = {
-    # ── Pro ──
-    "pro-nothink": (DeepSeekText, {
+    # ── DeepSeek Pro ──
+    "deepseek-pro-nothink": (DeepSeekText, {
         "model_name": "deepseek-v4-pro",
         "enable_thinking": False,
     }),
-    "pro-high": (DeepSeekText, {
+    "deepseek-pro-high": (DeepSeekText, {
         "model_name": "deepseek-v4-pro",
         "enable_thinking": True, "reasoning_effort": "high",
     }),
-    "pro-max": (DeepSeekText, {
+    "deepseek-pro-max": (DeepSeekText, {
         "model_name": "deepseek-v4-pro",
         "enable_thinking": True, "reasoning_effort": "max",
     }),
-    # ── Flash ──
-    "flash-nothink": (DeepSeekText, {
+    # ── DeepSeek Flash ──
+    "deepseek-flash-nothink": (DeepSeekText, {
         "model_name": "deepseek-v4-flash",
         "enable_thinking": False,
     }),
-    "flash-high": (DeepSeekText, {
+    "deepseek-flash-high": (DeepSeekText, {
         "model_name": "deepseek-v4-flash",
         "enable_thinking": True, "reasoning_effort": "high",
     }),
-    "flash-max": (DeepSeekText, {
+    "deepseek-flash-max": (DeepSeekText, {
         "model_name": "deepseek-v4-flash",
         "enable_thinking": True, "reasoning_effort": "max",
     }),
@@ -46,9 +46,5 @@ AVAILABLE_MODELS = {
     "kimi-k2.5-nothink": (KimiText, {
         "model_name": "kimi-k2.5",
         "enable_thinking": False,
-    }),
-    # ── Kimi K2-thinking（强制思考）──
-    "kimi-k2-thinking": (KimiText, {
-        "model_name": "kimi-k2-thinking",
     }),
 }
