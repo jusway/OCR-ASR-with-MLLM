@@ -9,10 +9,11 @@ from .base import BaseTextModel
 class NvidiaText(BaseTextModel):
     """使用英伟达 (NVIDIA) API 进行文本处理，支持思考过程。"""
     def __init__(self, model_name: str = "minimaxai/minimax-m2.7", temperature: float = 1.0, top_p: float = 1.0,
-                 enable_thinking: bool = False):
+                 enable_thinking: bool = False, thinking_kwargs: dict = None):
         super().__init__(model_name, temperature, top_p)
         self.api_key = os.getenv("NVIDIA_API_KEY")
         self.enable_thinking = enable_thinking
+        self.thinking_kwargs = thinking_kwargs or ({"thinking": True} if enable_thinking else {})
         if not self.api_key:
             raise ValueError("未找到 NVIDIA_API_KEY，请设置环境变量。")
         self.client = OpenAI(
@@ -25,13 +26,12 @@ class NvidiaText(BaseTextModel):
         kwargs = {
             "model": self.model_name,
             "messages": messages,
-            "stream": stream
+            "stream": stream,
+            "temperature": self.temperature,
+            "top_p": self.top_p,
         }
-        if self.enable_thinking:
-            kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": True, "clear_thinking": False}}
-        else:
-            kwargs["temperature"] = self.temperature
-            kwargs["top_p"] = self.top_p
+        if self.thinking_kwargs:
+            kwargs["extra_body"] = {"chat_template_kwargs": self.thinking_kwargs}
         return kwargs
 
     def _build_messages(self, system_prompt: str, prompt: str) -> list:
