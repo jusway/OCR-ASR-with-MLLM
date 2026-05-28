@@ -327,12 +327,6 @@ class PreciseLocatePipeline:
         print(f"⏱️ 本次全部模型调用总耗时: {self._format_time(_total_time)}")
         print(f"\n===========================================")
         print(f"{Color.GREEN}🎉 全部流程处理完成！{Color.END}")
-        print(f"💡 最终文件列表：")
-        print(f"  - 逐字稿: {transcript_filename.name}")
-        print(f"  - 初次校对稿: {draft_filename.name}")
-        print(f"  - 精准原文: {precision_filename.name}")
-        print(f"  - 最终校对稿: {final_filename.name}")
-        print(f"  - 摩诃止观正文: 第1步_精准原文_正文.md")
         print(f"===========================================\n")
 
     # ── 工具方法 ─────────────────────────────

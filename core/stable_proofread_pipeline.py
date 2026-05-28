@@ -251,11 +251,6 @@ class TwoPassProofreadPipeline:
 
         print(f"\n{Color.GREEN}===========================================")
         print("🎉 全部流程处理完成！")
-        print(f"💡 最终文件列表：")
-        print(f"  - 逐字稿: {transcript_filename.name}")
-        print(f"  - 初次校对稿: {draft_filename.name}")
-        print(f"  - 精准原文: {precision_filename.name}")
-        print(f"  - 最终校对稿: {final_filename.name}")
         print(f"===========================================\n")
 
     # ── 工具方法 ─────────────────────────────
