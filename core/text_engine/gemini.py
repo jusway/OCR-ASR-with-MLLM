@@ -33,7 +33,8 @@ class GeminiText(BaseTextModel):
                 return response.text
             except errors.APIError as e:
                 if attempt < max_retries - 1:
-                    print(f"{Color.RED}⚠️ Gemini API 调用失败 (尝试 {attempt + 1}/{max_retries}): {repr(e)}")
+                    _err_msg = repr(e) + ("\n  └─ " + repr(e.__cause__) if e.__cause__ else "")
+                    print(f"{Color.RED}⚠️ Gemini API 调用失败 (尝试 {attempt + 1}/{max_retries}): {_err_msg}")
                     print(f"{Color.RED}等待 3 秒后重试...\033[0m")
                     time.sleep(3)
                 else:
@@ -59,7 +60,8 @@ class GeminiText(BaseTextModel):
                 break
             except errors.APIError as e:
                 if attempt < max_retries - 1:
-                    print(f"\n{Color.RED}⚠️ Gemini API 流式调用失败 (尝试 {attempt + 1}/{max_retries}): {repr(e)}")
+                    _err_msg = repr(e) + ("\n  └─ " + repr(e.__cause__) if e.__cause__ else "")
+                    print(f"\n{Color.RED}⚠️ Gemini API 流式调用失败 (尝试 {attempt + 1}/{max_retries}): {_err_msg}")
                     time.sleep(3)
                 else:
                     raise
