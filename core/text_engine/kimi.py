@@ -109,7 +109,7 @@ class KimiText(BaseTextModel):
                 sys.exit(1)
             except Exception as e:
                 if attempt < 4:
-                    print(f"{Color.RED}⚠️ {self.model_name} 调用失败 (尝试 {attempt+1}/5): {e}{Color.END}")
+                    print(f"{Color.RED}⚠️ {self.model_name} 调用失败 (尝试 {attempt+1}/5): {repr(e)}{Color.END}")
                     time.sleep(3)
                 else:
                     raise
@@ -139,7 +139,7 @@ class KimiText(BaseTextModel):
                 return
             except Exception as e:
                 if attempt < 4:
-                    print(f"\n{Color.RED}⚠️ {self.model_name} 流式调用失败 (尝试 {attempt+1}/5): {e}")
+                    print(f"\n{Color.RED}⚠️ {self.model_name} 流式调用失败 (尝试 {attempt+1}/5): {repr(e)}")
                     time.sleep(3)
                 else:
                     raise

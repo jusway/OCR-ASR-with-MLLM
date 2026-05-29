@@ -25,7 +25,7 @@ from core.anchor_proofread_pipeline import AnchorProofreadPipeline
 # ============================================================
 
 # 1) 任务文件夹（脚本自动找 .mp3）
-folder_path = Path(r"摩诃止观-定智法师 2017/09正说分/2019年1月1日摩诃止观09正说分第六方便044")
+folder_path = Path(r"摩诃止观-定智法师 2017/10正说分/2019年1月2日摩诃止观09正说分第六方便048（10-2）")
 
 # 2) 元数据
 year = "2019"
@@ -39,6 +39,9 @@ LAST_N_CHARS = 1000
 
 # 5) 调试模式
 DEBUG_MODE = False
+
+# 6) 是否对最终校对稿中的摩诃止观原文加 ** 标注
+ENABLE_MARK_QUOTES = True
 
 
 # ============================================================
@@ -81,11 +84,11 @@ anchor_system_prompt = """\
 - 保留ASR语音识别稿件的**所有信息**，包括但不限于：观点、通俗案例、类比比喻、\
 解释、即兴讲话、开玩笑的话、开经偈和回向偈，等等。
 - **编号对齐**：语音稿已逐句编号。输出的校对稿，必须保留每一个编号，一个编号也不能少！
-- 虽然一个编号也不能少，但是当认为某编号句子应该删节的时候，允许在编号后面输出空字符来代表删节。\
-允许在不同编号之间交换句子。这些变通都是为了书面稿的通顺易读，但绝不能丢失信息！
+- 当认为某编号句子应该删节的时候，允许在编号后面输出空字符来代表删节，而不是去掉这个编号！\
 
 ## 输出格式
-格式参考语音搞，严格按照编号顺序逐句输出。直接输出结果，不说任何多余的话。"""
+- 格式参考语音搞，严格按照编号顺序逐句输出。直接输出结果，不说任何多余的话。
+- 严禁任何md格式。"""
 
 anchor_user_prompt_template = """\
 【原文参考】（供全局校对使用）
@@ -143,5 +146,6 @@ if __name__ == "__main__":
         check_sys_prompt=check_system_prompt,
         check_user_prompt_template=check_user_prompt_template,
         last_n_chars=LAST_N_CHARS,
+        enable_mark_quotes=ENABLE_MARK_QUOTES,
         debug=DEBUG_MODE,
     )

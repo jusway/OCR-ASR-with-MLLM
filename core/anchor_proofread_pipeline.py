@@ -43,6 +43,7 @@ class AnchorProofreadPipeline:
             check_user_prompt_template="",
             anchor_model_key=None,
             last_n_chars=1000,
+            enable_mark_quotes=True,
             debug=False):
 
         # ── 初始化引擎 ─────────────────────
@@ -346,13 +347,14 @@ class AnchorProofreadPipeline:
             final_filename.write_text(final_text, encoding="utf-8")
             print(f"{Color.GREEN}✅ 最终校对稿已保存至: {final_filename.name}{Color.END}")
 
-        # 精准原文正文加粗标记
-        marked_text = self._mark_quotes(final_text, precise_body)
-        if marked_text != final_text:
-            count = marked_text.count('**') // 2
-            print(f"{Color.GREEN}✅ 已在最终校对稿中标注 {count} 处摩诃止观原文引用{Color.END}")
-            final_filename.write_text(marked_text, encoding="utf-8")
-            final_text = marked_text
+        # 精准原文正文加粗标记（可选开关）
+        if enable_mark_quotes:
+            marked_text = self._mark_quotes(final_text, precise_body)
+            if marked_text != final_text:
+                count = marked_text.count('**') // 2
+                print(f"{Color.GREEN}✅ 已在最终校对稿中标注 {count} 处摩诃止观原文引用{Color.END}")
+                final_filename.write_text(marked_text, encoding="utf-8")
+                final_text = marked_text
 
         # ═══════════════════════════════════
         print(f"\n[8/8] 插入元数据...")

@@ -52,7 +52,7 @@ class NvidiaText(BaseTextModel):
                     return msg.content or ""
             except Exception as e:
                 if attempt < 4:
-                    print(f"{Color.RED}⚠️ {self.model_name} 调用失败 (尝试 {attempt+1}/5): {e}")
+                    print(f"{Color.RED}⚠️ {self.model_name} 调用失败 (尝试 {attempt+1}/5): {repr(e)}")
                     time.sleep(3)
                 else:
                     raise
@@ -78,7 +78,7 @@ class NvidiaText(BaseTextModel):
                 return
             except Exception as e:
                 if attempt < 4:
-                    print(f"\n{Color.RED}⚠️ {self.model_name} 流式调用失败 (尝试 {attempt+1}/5): {e}")
+                    print(f"\n{Color.RED}⚠️ {self.model_name} 流式调用失败 (尝试 {attempt+1}/5): {repr(e)}")
                     time.sleep(3)
                 else:
                     raise
