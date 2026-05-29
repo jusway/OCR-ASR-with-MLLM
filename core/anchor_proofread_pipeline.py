@@ -264,6 +264,7 @@ class AnchorProofreadPipeline:
 
         # -- 5c. 验证编号完整性 --
         print(f"\n--- 编号完整性验证 ---")
+        _verify_ok = False
         output_numbers = re.findall(r'\[(\d{4})\]', raw_output)
         if not output_numbers:
             print(f"❌ 输出中未检测到任何编号，LLM 可能未按要求输出。")
@@ -272,6 +273,7 @@ class AnchorProofreadPipeline:
             missing = [i for i in range(1, total_sentences + 1) if output_nums_int.count(i) == 0]
             duplicate = [(i, output_nums_int.count(i)) for i in range(1, total_sentences + 1) if output_nums_int.count(i) > 1]
             if not missing and not duplicate:
+                _verify_ok = True
                 print(f"{Color.GREEN}✅ 编号序列完整！全部 {total_sentences} 句均已输出（1:1 对应）{Color.END}")
             else:
                 if missing:
@@ -402,6 +404,15 @@ class AnchorProofreadPipeline:
         _elapsed_real = time.time() - _start_time
         print(f"{Color.ORANGE}⏱️ 实际运行总耗时: {self._format_time(_elapsed_real)}{Color.END}")
         print(f"{Color.ORANGE}───────────────────────────────────{Color.END}")
+        # 编号验证结果
+        try:
+            _verify_ok
+        except NameError:
+            _verify_ok = True  # fresh file, assume complete
+        if _verify_ok:
+            print(f"{Color.GREEN}  ✓ 编号验证：序列完整，无缺失{Color.END}")
+        else:
+            print(f"  ⚠️ 编号验证：存在缺失编号，请查看上方验证详情")
         # 遗漏检查结果
         try:
             _no_loss

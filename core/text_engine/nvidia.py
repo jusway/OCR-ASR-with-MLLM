@@ -53,8 +53,10 @@ class NvidiaText(BaseTextModel):
             except Exception as e:
                 if attempt < 4:
                     _err_msg = repr(e)
+                    _seen = {id(e)}
                     _cause = e.__cause__
-                    while _cause:
+                    while _cause and id(_cause) not in _seen:
+                        _seen.add(id(_cause))
                         _err_msg += f"\n  └─ {repr(_cause)}"
                         _cause = _cause.__cause__
                     print(f"{Color.RED}⚠️ {self.model_name} 调用失败 (尝试 {attempt+1}/5): {_err_msg}")
@@ -84,8 +86,10 @@ class NvidiaText(BaseTextModel):
             except Exception as e:
                 if attempt < 4:
                     _err_msg = repr(e)
+                    _seen = {id(e)}
                     _cause = e.__cause__
-                    while _cause:
+                    while _cause and id(_cause) not in _seen:
+                        _seen.add(id(_cause))
                         _err_msg += f"\n  └─ {repr(_cause)}"
                         _cause = _cause.__cause__
                     print(f"\n{Color.RED}⚠️ {self.model_name} 流式调用失败 (尝试 {attempt+1}/5): {_err_msg}")
