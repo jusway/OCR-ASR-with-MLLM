@@ -109,7 +109,11 @@ class KimiText(BaseTextModel):
                 sys.exit(1)
             except Exception as e:
                 if attempt < 4:
-                    _err_msg = repr(e) + ("\n  └─ " + repr(e.__cause__) if e.__cause__ else "")
+                    _err_msg = repr(e)
+                    _cause = e.__cause__
+                    while _cause:
+                        _err_msg += f"\n  └─ {repr(_cause)}"
+                        _cause = _cause.__cause__
                     print(f"{Color.RED}⚠️ {self.model_name} 调用失败 (尝试 {attempt+1}/5): {_err_msg}{Color.END}")
                     time.sleep(3)
                 else:
@@ -140,7 +144,11 @@ class KimiText(BaseTextModel):
                 return
             except Exception as e:
                 if attempt < 4:
-                    _err_msg = repr(e) + ("\n  └─ " + repr(e.__cause__) if e.__cause__ else "")
+                    _err_msg = repr(e)
+                    _cause = e.__cause__
+                    while _cause:
+                        _err_msg += f"\n  └─ {repr(_cause)}"
+                        _cause = _cause.__cause__
                     print(f"\n{Color.RED}⚠️ {self.model_name} 流式调用失败 (尝试 {attempt+1}/5): {_err_msg}")
                     time.sleep(3)
                 else:

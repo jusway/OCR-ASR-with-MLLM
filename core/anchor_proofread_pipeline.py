@@ -122,6 +122,7 @@ class AnchorProofreadPipeline:
         print(f"⏱️ 音频时长: {duration}，供参考选取原文范围")
         print(f"请在 {fuzzy_filename.name} 中整理模糊原文（开头已有上节课结尾，只需粘贴即可），保存后回到此处按回车继续...")
         input()
+        _start_time = time.time()
         fuzzy_reference_text = fuzzy_filename.read_text("utf-8").strip()
         if not fuzzy_reference_text:
             print(f"{Color.RED}错误：模糊原文为空，请填入内容后重新运行。")
@@ -291,7 +292,7 @@ class AnchorProofreadPipeline:
             else:
                 self._confirm_step("遗漏检查", debug)
                 check_prompt = check_user_prompt_template.format(
-                    transcript_text=transcript_text,
+                    transcript_text=numbered_text,
                     written_text=raw_output,
                 )
                 print(f"调用中...")
@@ -398,6 +399,8 @@ class AnchorProofreadPipeline:
         for step_label, t in _step_times:
             print(f"{Color.ORANGE}⏱️ {step_label}: {self._format_time(t)}{Color.END}")
         print(f"{Color.ORANGE}⏱️ 全部模型调用总耗时: {self._format_time(_total_time)}{Color.END}")
+        _elapsed_real = time.time() - _start_time
+        print(f"{Color.ORANGE}⏱️ 实际运行总耗时: {self._format_time(_elapsed_real)}{Color.END}")
         print(f"{Color.ORANGE}───────────────────────────────────{Color.END}")
         # 遗漏检查结果
         try:

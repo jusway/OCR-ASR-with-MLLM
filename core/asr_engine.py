@@ -84,7 +84,11 @@ class Qwen3ASRFlashFiletrans(BaseASR):
                     break
                 except Exception as e:
                     if attempt < 4:
-                        _err_msg = repr(e) + ("\n  └─ " + repr(e.__cause__) if e.__cause__ else "")
+                        _err_msg = repr(e)
+                        _cause = e.__cause__
+                        while _cause:
+                            _err_msg += f"\n  └─ {repr(_cause)}"
+                            _cause = _cause.__cause__
                         print(f"{Color.RED}⚠️ 查询任务状态失败 (尝试 {attempt+1}/5): {_err_msg}")
                         time.sleep(5)
                     else:
