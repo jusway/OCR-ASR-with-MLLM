@@ -4,7 +4,7 @@ import os
 import time
 
 # ==================== 配置：改这里选模型 ====================
-MODEL_KEY = "deepseek-pro-nothink-stable"
+MODEL_KEY = "packy-codex-gpt-5.5-nothink"
 # ===========================================================
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -31,26 +31,27 @@ def test_model(key: str):
 
     engine = model_cls(**model_kwargs)
 
-    print("正在调用模型（说一句话）...")
+    print("正在调用模型（说一个字）...")
     t0 = time.time()
-    response = engine.client.chat.completions.create(
-        model=model_name,
-        messages=[{"role": "user", "content": "说一个字"}],
-        max_tokens=256,
-        temperature=1.0,
-        top_p=1.0,
-    )
+    try:
+        content = "".join(engine.generate_stream(system_prompt="", prompt="说一个字"))
+    except Exception as e:
+        print(f"❌ 调用失败: {e}")
+        return
     elapsed = time.time() - t0
-    msg = response.choices[0].message
-    content = msg.content or ""
-    reasoning = getattr(msg, "reasoning_content", None)
-    if content.strip():
+
+    reasoning = engine._last_reasoning_content
+    if content and content.strip():
         print(f"✅ 调用成功！耗时 {elapsed:.1f}s")
         print(f"   回复 ({len(content)} 字): {content[:200]}")
     else:
         print(f"⚠️ 调用成功但回复为空！耗时 {elapsed:.1f}s")
     if reasoning:
+        preview = reasoning[:500].replace('\n', '\\n')
         print(f"   🧠 思考内容: {len(reasoning)} 字")
+        print(f"      预览（前 500 字）: {preview}")
+        if len(reasoning) > 500:
+            print(f"      ...（共 {len(reasoning)} 字，仅展示前 500 字）")
 
 
 if __name__ == "__main__":

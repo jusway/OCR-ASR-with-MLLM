@@ -17,18 +17,6 @@ class DoubaoText(BaseTextModel):
             timeout=600.0,
         )
 
-    def generate(self, system_prompt: str, prompt: str) -> str:
-        response = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=self.temperature,
-            top_p=self.top_p
-        )
-        return response.choices[0].message.content
-
     def generate_stream(self, system_prompt: str, prompt: str):
         response = self.client.chat.completions.create(
             model=self.model_name,

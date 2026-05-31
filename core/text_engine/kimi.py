@@ -77,50 +77,6 @@ class KimiText(BaseTextModel):
             raise StopIteration
         return result["value"]
 
-    def generate(self, system_prompt: str, prompt: str) -> str:
-        messages = self._build_messages(system_prompt, prompt)
-        chunk_timeout = 180 if self.enable_thinking else 60
-        for attempt in range(5):
-            try:
-                response = self.client.chat.completions.create(
-                    **self._get_kwargs(messages, stream=True)
-                )
-                content_parts = []
-                reasoning_parts = []
-                try:
-                    while True:
-                        chunk = self._timeout_iter(response, chunk_timeout)
-                        if not chunk.choices:
-                            continue
-                        delta = chunk.choices[0].delta
-                        if not delta:
-                            continue
-                        if hasattr(delta, "reasoning_content") and delta.reasoning_content:
-                            reasoning_parts.append(delta.reasoning_content)
-                            continue
-                        if delta.content:
-                            content_parts.append(delta.content)
-                except StopIteration:
-                    pass
-                self._last_reasoning_content = "".join(reasoning_parts) if reasoning_parts else None
-                return "".join(content_parts)
-            except TimeoutError:
-                print(f"{Color.RED}❌ {self.model_name} {chunk_timeout}s 内无响应，终止运行{Color.END}")
-                sys.exit(1)
-            except Exception as e:
-                if attempt < 4:
-                    _err_msg = repr(e)
-                    _seen = {id(e)}
-                    _cause = e.__cause__
-                    while _cause and id(_cause) not in _seen:
-                        _seen.add(id(_cause))
-                        _err_msg += f"\n  └─ {repr(_cause)}"
-                        _cause = _cause.__cause__
-                    print(f"{Color.RED}⚠️ {self.model_name} 调用失败 (尝试 {attempt+1}/5): {_err_msg}{Color.END}")
-                    time.sleep(3)
-                else:
-                    raise
-
     def generate_stream(self, system_prompt: str, prompt: str):
         messages = self._build_messages(system_prompt, prompt)
         for attempt in range(5):

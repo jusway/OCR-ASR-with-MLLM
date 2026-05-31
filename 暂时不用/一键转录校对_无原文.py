@@ -100,7 +100,7 @@ if __name__ == "__main__":
         else:
             print(f"{Color.DARK_PURPLE}[{base_name}] 正在校对...")
             user_prompt = text_user_prompt_template.format(transcript_text=transcript_text)
-            proofread_text = text_engine.generate(text_system_prompt, user_prompt)
+            proofread_text = "".join(text_engine.generate_stream(text_system_prompt, user_prompt))
             proofread_path.write_text(proofread_text, "utf-8")
             print(f"{Color.GREEN}[{base_name}] 校对稿已保存")
 
@@ -114,7 +114,7 @@ if __name__ == "__main__":
                 transcript_text=transcript_text,
                 written_text=proofread_text
             )
-            report = text_engine.generate(verifier_system_prompt, verifier_prompt)
+            report = "".join(text_engine.generate_stream(verifier_system_prompt, verifier_prompt))
             has_loss = "无遗漏信息" not in report
             tag = "有遗漏" if has_loss else "无遗漏"
             verification_path = audio_path.parent / f"{base_name}_丢失信息检查_{tag}.md"

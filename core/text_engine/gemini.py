@@ -16,36 +16,6 @@ class GeminiText(BaseTextModel):
             }
         )
 
-    def generate(self, system_prompt: str, prompt: str) -> str:
-        config = types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            temperature=self.temperature,
-            top_p=self.top_p,
-        )
-        max_retries = 5
-        for attempt in range(max_retries):
-            try:
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=prompt,
-                    config=config
-                )
-                return response.text
-            except errors.APIError as e:
-                if attempt < max_retries - 1:
-                    _err_msg = repr(e)
-                    _seen = {id(e)}
-                    _cause = e.__cause__
-                    while _cause and id(_cause) not in _seen:
-                        _seen.add(id(_cause))
-                        _err_msg += f"\n  └─ {repr(_cause)}"
-                        _cause = _cause.__cause__
-                    print(f"{Color.RED}⚠️ Gemini API 调用失败 (尝试 {attempt + 1}/{max_retries}): {_err_msg}")
-                    print(f"{Color.RED}等待 3 秒后重试...\033[0m")
-                    time.sleep(3)
-                else:
-                    raise
-
     def generate_stream(self, system_prompt: str, prompt: str):
         config = types.GenerateContentConfig(
             system_instruction=system_prompt,

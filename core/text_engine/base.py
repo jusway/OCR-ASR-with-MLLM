@@ -9,11 +9,6 @@ class BaseTextModel(ABC):
         self.top_p = top_p
 
     @abstractmethod
-    def generate(self, system_prompt: str, prompt: str) -> str:
-        """非流式生成"""
-        pass
-
-    @abstractmethod
     def generate_stream(self, system_prompt: str, prompt: str):
         """流式生成"""
         pass

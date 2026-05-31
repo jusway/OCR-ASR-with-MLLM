@@ -53,7 +53,7 @@ class AudioProcessingPipeline:
         user_prompt = f"\n【原典参考】\n{prompt_text}\n\n【总逐字稿】\n{transcript_text}\n"
 
         print("\n[2/3] 正在将逐字稿整理为书面稿，请耐心等待...")
-        written_text = text_bot.generate(text_sys_prompt, user_prompt)
+        written_text = "".join(text_bot.generate_stream(text_sys_prompt, user_prompt))
 
         print("\n[3/3] API 处理全部完成！请补充元数据信息以生成最终文档：")
         year = input("请输入音频的创建时间（年份）: ")

@@ -124,7 +124,7 @@ class TwoPassProofreadPipeline:
                 example_text=example_text,
             )
             _t0 = time.time()
-            draft_text = draft_engine.generate(draft_sys_prompt, draft_prompt)
+            draft_text = "".join(draft_engine.generate_stream(draft_sys_prompt, draft_prompt))
             _elapsed = time.time() - _t0
             _total_time += _elapsed
             print(f"{Color.GREEN}⏱️ 初次校对稿模型调用耗时: {self._format_time(_elapsed)}")
@@ -151,7 +151,7 @@ class TwoPassProofreadPipeline:
                 fuzzy_reference_text=fuzzy_reference_text,
             )
             _t0 = time.time()
-            precision_text = refine_engine.generate(refine_sys_prompt, refine_prompt)
+            precision_text = "".join(refine_engine.generate_stream(refine_sys_prompt, refine_prompt))
             _elapsed = time.time() - _t0
             _total_time += _elapsed
             print(f"{Color.GREEN}⏱️ 精准原文提取耗时: {self._format_time(_elapsed)}")
@@ -172,7 +172,7 @@ class TwoPassProofreadPipeline:
                     precision_text=precision_text,
                 )
                 _t0 = time.time()
-                main_body = extract_engine.generate(extract_sys_prompt, extract_prompt).strip()
+                main_body = "".join(extract_engine.generate_stream(extract_sys_prompt, extract_prompt)).strip()
                 _elapsed = time.time() - _t0
                 _total_time += _elapsed
                 print(f"{Color.GREEN}⏱️ 正文提取耗时: {self._format_time(_elapsed)}")
@@ -200,7 +200,7 @@ class TwoPassProofreadPipeline:
                     example_text=example_text,
                 )
                 _t0 = time.time()
-                final_text = final_engine.generate(final_sys_prompt, final_prompt)
+                final_text = "".join(final_engine.generate_stream(final_sys_prompt, final_prompt))
                 _elapsed = time.time() - _t0
                 _total_time += _elapsed
                 print(f"{Color.GREEN}⏱️ 最终校对稿模型调用耗时: {self._format_time(_elapsed)}")

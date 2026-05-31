@@ -87,6 +87,7 @@ class PreciseLocatePipeline:
         if not fuzzy_reference_text:
             print(f"{Color.RED}错误：模糊原文为空，请填入内容后重新运行。")
             exit(1)
+        _start_time = time.time()
 
         # ── 第1步预处理：脚注重排 ──────
         rearranged_fn = parent_dir / "第1步_模糊原文_已重排.md"
@@ -104,6 +105,7 @@ class PreciseLocatePipeline:
         asr_engine = Qwen3ASRFlashFiletrans(model_name=asr_model_name)
 
         _total_time = 0.0
+        _step_times = []
 
         def _save_thinking(step_prefix, engine, label):
             if hasattr(engine, '_last_reasoning_content') and engine._last_reasoning_content:
@@ -123,6 +125,7 @@ class PreciseLocatePipeline:
             transcript_text = asr_engine.recognize(audio_path)
             _elapsed = time.time() - _t0
             _total_time += _elapsed
+            _step_times.append(("[0/4] ASR 转录", _elapsed))
             print(f"⏱️ ASR 转录耗时: {self._format_time(_elapsed)}")
             transcript_filename.write_text(transcript_text, encoding="utf-8")
             print(f"{Color.GREEN}逐字稿已保存至: {transcript_filename}{Color.END}")
@@ -145,9 +148,10 @@ class PreciseLocatePipeline:
                 )
                 print("调用中...")
                 _t0 = time.time()
-                draft_text = draft_engine.generate(draft_sys_prompt, draft_prompt)
+                draft_text = "".join(draft_engine.generate_stream(draft_sys_prompt, draft_prompt))
                 _elapsed = time.time() - _t0
                 _total_time += _elapsed
+                _step_times.append(("[0.5/4] 初次校对", _elapsed))
                 _save_thinking("第0.5步_", draft_engine, "初次校对")
                 print(f"⏱️ 初次校对耗时: {self._format_time(_elapsed)}")
                 if draft_text.startswith("【校对稿】"):
@@ -175,9 +179,10 @@ class PreciseLocatePipeline:
             )
             print("调用中...")
             _t0 = time.time()
-            last_sentence = locate_engine.generate(locate_sys_prompt, locate_prompt).strip()
+            last_sentence = "".join(locate_engine.generate_stream(locate_sys_prompt, locate_prompt)).strip()
             _elapsed = time.time() - _t0
             _total_time += _elapsed
+            _step_times.append(("[1/4] 末尾定位", _elapsed))
             _save_thinking("第1步_", locate_engine, "末尾定位")
             print(f"⏱️ 末尾定位耗时: {self._format_time(_elapsed)}")
             # 模型返回末尾结果已保存至文件，不在控制台重复打印
@@ -243,9 +248,10 @@ class PreciseLocatePipeline:
             )
             print("调用中...")
             _t0 = time.time()
-            final_text = final_engine.generate(final_sys_prompt, final_prompt)
+            final_text = "".join(final_engine.generate_stream(final_sys_prompt, final_prompt))
             _elapsed = time.time() - _t0
             _total_time += _elapsed
+            _step_times.append(("[2/4] 最终校对", _elapsed))
             _save_thinking("第2步_", final_engine, "最终校对")
             print(f"⏱️ 最终校对稿模型调用耗时: {self._format_time(_elapsed)}")
             if final_text.startswith("【校对稿】"):
@@ -261,7 +267,7 @@ class PreciseLocatePipeline:
                 print(f"{Color.ORANGE}⚠️ 浓缩率 {_ratio:.1f}% 低于 50%，第 {retry + 2} 次重试...{Color.END}")
                 print("调用中...")
                 _t0 = time.time()
-                final_text = final_engine.generate(final_sys_prompt, final_prompt)
+                final_text = "".join(final_engine.generate_stream(final_sys_prompt, final_prompt))
                 _elapsed = time.time() - _t0
                 _total_time += _elapsed
                 _save_thinking("第2步_", final_engine, "最终校对")
@@ -287,18 +293,19 @@ class PreciseLocatePipeline:
                 )
                 print("调用中...")
                 _t0 = time.time()
-                check_report = check_engine.generate(check_sys_prompt, check_prompt)
+                check_report = "".join(check_engine.generate_stream(check_sys_prompt, check_prompt))
                 _elapsed = time.time() - _t0
                 _total_time += _elapsed
+                _step_times.append(("[3/4] 遗漏检查", _elapsed))
                 _save_thinking("第3步_", check_engine, "遗漏检查")
                 print(f"⏱️ 遗漏检查耗时: {self._format_time(_elapsed)}")
                 check_filename.write_text(check_report, encoding="utf-8")
                 print(f"{Color.GREEN}✅ 遗漏检查报告已保存至: {check_filename.name}{Color.END}")
                 # 根据报告内容标记状态
                 if "【无遗漏信息】" in check_report or "完美" in check_report:
-                    print(f"{Color.GREEN}  ✓ 检查结果：无关键信息遗漏{Color.END}")
+                    _check_no_loss = True
                 else:
-                    print(f"{Color.ORANGE}  ⚠️ 检查结果：可能有遗漏，请查看报告{Color.END}")
+                    _check_no_loss = False
 
         # ── 步骤4：插入元数据 ───────────
         main_body = precise_body  # 复用已提取的精准原文正文
@@ -324,9 +331,30 @@ class PreciseLocatePipeline:
             print("📄 以下为插入的摩诃止观正文：")
             print(main_body_header.replace("> 摩诃止观正文：", "").strip())
 
-        print(f"⏱️ 本次全部模型调用总耗时: {self._format_time(_total_time)}")
-        print(f"\n===========================================")
-        print(f"{Color.GREEN}🎉 全部流程处理完成！{Color.END}")
+        # ── 输出总结 ──
+        clean = final_text
+        if "---" in clean:
+            clean = clean.split("---", 1)[1]
+        clean = clean.replace("**", "").replace("\n", "")
+        clean_len = len(clean)
+        transcript_len = len(transcript_text)
+        final_ratio = clean_len / transcript_len * 100
+        print(f"{Color.ORANGE}📊 字数统计：最终校对稿 {clean_len} / 逐字稿 {transcript_len} = {final_ratio:.1f}%{Color.END}")
+        print(f"{Color.ORANGE}───────────────────────────────────{Color.END}")
+        for step_label, t in _step_times:
+            print(f"{Color.ORANGE}⏱️ {step_label}: {self._format_time(t)}{Color.END}")
+        print(f"{Color.ORANGE}⏱️ 全部模型调用总耗时: {self._format_time(_total_time)}{Color.END}")
+        _elapsed_real = time.time() - _start_time
+        print(f"{Color.ORANGE}⏱️ 实际运行总耗时: {self._format_time(_elapsed_real)}{Color.END}")
+        print(f"{Color.ORANGE}───────────────────────────────────{Color.END}")
+        try:
+            _check_no_loss
+        except NameError:
+            _check_no_loss = None
+        if _check_no_loss is True:
+            print(f"{Color.GREEN}  ✓ 遗漏检查：无关键信息遗漏{Color.END}")
+        elif _check_no_loss is False:
+            print(f"{Color.ORANGE}  ⚠️ 遗漏检查：可能有遗漏，详见遗漏检查文件{Color.END}")
         print(f"===========================================\n")
 
     # ── 工具方法 ─────────────────────────────

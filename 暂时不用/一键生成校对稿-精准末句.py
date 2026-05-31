@@ -47,7 +47,8 @@ draft_user_prompt_template = """\
 # ============================================================
 # 讲稿末尾假如说1K，模糊原文参考假如说8K，输出没多少，加起来10K左右。   实践后deepseek-pro-nothink有概率出错，最好开个思考。
 # 开了deepseek-pro-thinking-high还是有概率错。   deepseek-pro-nothink-stable实践后发现如果模糊原文参考没有片段，也不能变通输出【无匹配片段】，也容易有错
-LOCATE_SELECTED_MODEL = "deepseek-pro-thinking-max"
+# LOCATE_SELECTED_MODEL = "deepseek-pro-thinking-max"
+LOCATE_SELECTED_MODEL = "packy-codex-gpt-5.5-nothink"
 locate_system_prompt = """\
 ## 背景
 讲稿末尾是一位师父在讲解《摩诃止观辅行传弘决辑注》某一集录音的ASR转录稿件。
@@ -72,6 +73,9 @@ locate_user_prompt_template = """\
 # 录音稿接近16K，原文参考最多5K，输出怎么也得十几K，整个上下文35K吧，必须开始思考。
 # 而且实践后 deepseek-high有大概率遗漏一些信息。   #开deepseek-Max拉到极限还是有概率遗漏，可能对于这样30多K上下文遗漏是必然的。
 # 试了试kimi-k2.6-nothink,结果里面全是“**次位**”，感觉这模型好傻.      # kimi-k2.5-thinking 也有概率拉胯,输出40%多第二次100%多
+# FINAL_SELECTED_MODEL = "deepseek-pro-nothink-stable" # 浓缩率经常20%，太尴尬了
+# FINAL_SELECTED_MODEL = "packy-codex-gpt-5.5-nothink" # 偶尔会浓缩率20%多，尴尬，太过浓缩
+# FINAL_SELECTED_MODEL = "packy-codex-gpt-5.4-high" # 第一次用浓缩率40%，尴尬
 FINAL_SELECTED_MODEL = "deepseek-pro-nothink-stable"
 final_system_prompt = """\
 ## 背景
@@ -83,7 +87,7 @@ final_system_prompt = """\
 请逐字逐句对【ASR语音识别稿件】进行校对：修正错别字、同音字错误，去除多余啰嗦的语气词。
 保留ASR语音识别稿件的**所有信息**，包括但不限于：观点、通俗案例、类比比喻、\
 解释、即兴讲话、开玩笑的话、开经偈和回向偈，等等。
-虽然语音稿没有这么做，但是你要把所有摩诃止观原文作为小节标题，插入到合适的位置。
+虽然语音稿没有这么做，但是你要把所有摩诃止观原文作为小节标题，使用双星号包裹，插入到合适的位置。
 直接输出校对后的正文，按语义自然分段。"""
 
 final_user_prompt_template = """\
@@ -98,7 +102,7 @@ final_user_prompt_template = """\
 # ── 步骤③：遗漏检查 ───
 # ============================================================
 # 逐字稿15K的话，校对稿也十几K，输出基本没多少可以忽略,加起来接近30K,必须开始思考
-CHECK_SELECTED_MODEL = "deepseek-pro-thinking-high"
+CHECK_SELECTED_MODEL = "packy-codex-gpt-5.5-nothink"
 check_system_prompt = """\
 你是一个严格的文稿审查员。你的任务是对比原始的ASR逐字稿和处理后的校对稿。
 校对稿的目的是：保留所有法义、比喻、案例、解释、即兴讲话等等，将口语转化为书面语。
@@ -120,10 +124,10 @@ check_user_prompt_template = """\
 
 
 # 任务文件夹（脚本自动找 .mp3）
-folder_path = Path(r"摩诃止观-定智法师 2017/09正说分/2018年12月26日摩诃止观09正说分第六方便037")
+folder_path = Path(r"../摩诃止观-定智法师 2017/11正说分/2019年3月15日摩诃止观正说分11第七正修阴入界境观不思议境005")
 
 # 元数据（写入校对稿头部）
-year = "2018"
+year = "2019"
 author = "定智法师"
 # 截取ASR稿件末尾多少字用于定位末尾
 LAST_N_CHARS = 1000

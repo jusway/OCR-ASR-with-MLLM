@@ -34,13 +34,6 @@ class MiMoText(BaseTextModel):
             "thinking": {"type": "disabled"}
         }
 
-    def generate(self, system_prompt: str, prompt: str) -> str:
-        payload = self._build_payload(system_prompt, prompt, stream=False)
-        response = requests.post(self.base_url, headers=self._get_headers(), json=payload)
-        response.raise_for_status()
-        data = response.json()
-        return data['choices'][0]['message']['content']
-
     def generate_stream(self, system_prompt: str, prompt: str):
         payload = self._build_payload(system_prompt, prompt, stream=True)
         response = requests.post(self.base_url, headers=self._get_headers(), json=payload, stream=True)

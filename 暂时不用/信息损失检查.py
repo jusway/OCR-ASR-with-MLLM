@@ -50,7 +50,7 @@ class InfoLossVerifier:
 
         print(f"{Color.DARK_PURPLE}正在调用 AI 引擎进行深度对比（这可能需要一分钟左右）...{Color.END}")
         try:
-            report = self.text_engine.generate(verifier_sys_prompt, verifier_user_prompt)
+            report = "".join(self.text_engine.generate_stream(verifier_sys_prompt, verifier_user_prompt))
 
             with open(report_filename, "w", encoding="utf-8") as f:
                 f.write(report)

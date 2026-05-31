@@ -77,7 +77,7 @@ class AudioProcessingPipeline:
         print(f"\n[3/3] 正在将逐字稿整理为书面稿，请耐心等待...")
         user_prompt = f"【原典参考】\n{reference_text}\n\n【总逐字稿】\n{transcript_text}\n"
 
-        written_text = self.text_engine.generate(text_sys_prompt, user_prompt)
+        written_text = "".join(self.text_engine.generate_stream(text_sys_prompt, user_prompt))
 
         # ==========================================
         # 步骤 4: 补充元数据

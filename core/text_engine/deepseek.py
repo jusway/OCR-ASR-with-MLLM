@@ -48,29 +48,6 @@ class DeepSeekText(BaseTextModel):
         messages.append({"role": "user", "content": prompt})
         return messages
 
-    def generate(self, system_prompt: str, prompt: str) -> str:
-        messages = self._build_messages(system_prompt, prompt)
-        for attempt in range(5):
-            try:
-                response = self.client.chat.completions.create(**self._get_kwargs(messages, stream=False))
-                if response and response.choices:
-                    msg = response.choices[0].message
-                    self._last_reasoning_content = msg.reasoning_content if hasattr(msg, 'reasoning_content') else None
-                    return msg.content or ""
-            except Exception as e:
-                if attempt < 4:
-                    _err_msg = repr(e)
-                    _seen = {id(e)}
-                    _cause = e.__cause__
-                    while _cause and id(_cause) not in _seen:
-                        _seen.add(id(_cause))
-                        _err_msg += f"\n  └─ {repr(_cause)}"
-                        _cause = _cause.__cause__
-                    print(f"{Color.RED}⚠️ {self.model_name} 调用失败 (尝试 {attempt+1}/5): {_err_msg}")
-                    time.sleep(3)
-                else:
-                    raise
-
     def generate_stream(self, system_prompt: str, prompt: str):
         messages = self._build_messages(system_prompt, prompt)
         for attempt in range(5):

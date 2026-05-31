@@ -25,7 +25,7 @@ from core.anchor_proofread_pipeline import AnchorProofreadPipeline
 # ============================================================
 
 # 1) 任务文件夹（脚本自动找 .mp3）
-folder_path = Path(r"摩诃止观-定智法师 2017/10正说分/2019年1月2日摩诃止观09正说分第六方便048（10-2）")
+folder_path = Path(r"摩诃止观-定智法师 2017/11正说分/2019年3月19日摩诃止观正说分11第七正修阴入界境观不思议境007")
 
 # 2) 元数据
 year = "2019"
@@ -37,17 +37,21 @@ asr_model_name = "qwen3-asr-flash-filetrans"
 # 4) 截取 ASR 稿件末尾多少字用于定位末尾
 LAST_N_CHARS = 1000
 
-# 5) 调试模式
+# 5) 编号稿每项最低字数（低于此字数则与下一段合并）
+MIN_CHARS_PER_ITEM = 80
+
+# 6) 调试模式
 DEBUG_MODE = False
 
-# 6) 是否对最终校对稿中的摩诃止观原文加 ** 标注
+# 7) 是否对最终校对稿中的摩诃止观原文加 ** 标注
 ENABLE_MARK_QUOTES = True
 
 
 # ============================================================
 # ── 步骤 1：末尾定位 ───
 # ============================================================
-LOCATE_SELECTED_MODEL = "deepseek-pro-thinking-max"
+# LOCATE_SELECTED_MODEL = "deepseek-pro-thinking-max" # 还不错
+LOCATE_SELECTED_MODEL = "packy-codex-gpt-5.5-nothink"
 locate_system_prompt = """\
 ## 背景
 讲稿末尾是一位师父在讲解《摩诃止观辅行传弘决辑注》某一集录音的ASR转录稿件。
@@ -71,7 +75,9 @@ locate_user_prompt_template = """\
 # ============================================================
 # ── 步骤 2：编号锚点校对（★核心变更）───
 # ============================================================
-ANCHOR_SELECTED_MODEL = "deepseek-pro-thinking-high"
+# ANCHOR_SELECTED_MODEL = "deepseek-pro-thinking-high" # 还可以
+# ANCHOR_SELECTED_MODEL = "deepseek-pro-nothink-stable" # 还可以
+ANCHOR_SELECTED_MODEL = "packy-codex-gpt-5.5-nothink"
 anchor_system_prompt = """\
 ## 背景
 【ASR语音识别稿件】是一位师父在讲解《摩诃止观辅行传弘决辑注》的记录，每一句话都有对应的编号。
@@ -79,10 +85,12 @@ anchor_system_prompt = """\
 科判（类似"△二衣食具足二，初来意"）、摩诃止观原文（比如"**得此三谛三昧，故名王三昧，一切三昧悉入其中。**"）、解释、注脚。
 
 ## 角色与任务
-- 你是严谨的文字编辑。请将带有编号的ASR语音识别稿件逐句校对，输出为正式的书面校对稿。
-- 校对错别字和同音字、去掉过于啰嗦的语气词、想办法使句子通顺易读。
+- 你是严谨的文字校对员。请将带有编号的ASR语音识别稿件逐句校对，输出为带编号的书面校对稿。
+- 仅允许：校对错别字和同音字、去掉重复句子和过于啰嗦的语气词、想办法使句子通顺易读。
+
+## 核心守则
 - 保留ASR语音识别稿件的**所有信息**，包括但不限于：观点、通俗案例、类比比喻、\
-解释、即兴讲话、开玩笑的话、开经偈和回向偈，等等。
+解释、即兴讲话、开玩笑的话、开经偈和回向偈，等等。校对仅仅是对语音稿件的整理修饰，而不是信息删减！！！
 - **编号对齐**：语音稿已逐句编号。输出的校对稿，必须保留每一个编号，一个编号也不能少！
 - 当认为某编号句子应该删节的时候，允许在编号后面输出空字符来代表删节，而不是去掉这个编号！\
 
@@ -102,11 +110,13 @@ anchor_user_prompt_template = """\
 # ============================================================
 # ── 步骤 3：遗漏检查 ───
 # ============================================================
-CHECK_SELECTED_MODEL = "deepseek-pro-thinking-high"
+# CHECK_SELECTED_MODEL = "deepseek-pro-thinking-high"
+CHECK_SELECTED_MODEL = "packy-codex-gpt-5.5-nothink"
 check_system_prompt = """\
-你是一个严格的文稿审查员。你的任务是对比原始的ASR逐字稿和处理后的校对稿。
+你是一个文稿审查员。你的任务是对比ASR逐字稿和处理后的校对稿。
 校对稿的目的是：保留所有法义、比喻、案例、解释、即兴讲话等等，将口语转化为书面语。
 请仔细检查，列出所有在ASR逐字稿中存在、但被校对稿完全删减或遗漏的信息。
+但是如果是合理的删减和更改，是可以接受的。
 输出要求：
 - 如果没有发现明显遗漏，直接输出"【无遗漏信息】"。
 - 如果发现遗漏，请以列表形式输出，要有语音搞和校对稿的对照，方便看出区别。
@@ -146,6 +156,7 @@ if __name__ == "__main__":
         check_sys_prompt=check_system_prompt,
         check_user_prompt_template=check_user_prompt_template,
         last_n_chars=LAST_N_CHARS,
+        min_chars_per_item=MIN_CHARS_PER_ITEM,
         enable_mark_quotes=ENABLE_MARK_QUOTES,
         debug=DEBUG_MODE,
     )

@@ -42,9 +42,10 @@ class AnchorProofreadPipeline:
             check_sys_prompt="",
             check_user_prompt_template="",
             anchor_model_key=None,
-            last_n_chars=1000,
-            enable_mark_quotes=True,
-            debug=False):
+             last_n_chars=1000,
+             enable_mark_quotes=True,
+             min_chars_per_item=80,
+             debug=False):
 
         # ── 初始化引擎 ─────────────────────
         def _init(label, key):
@@ -161,7 +162,7 @@ class AnchorProofreadPipeline:
             )
             print(f"调用中...")
             _t0 = time.time()
-            last_sentence = locate_engine.generate(locate_sys_prompt, locate_prompt).strip()
+            last_sentence = "".join(locate_engine.generate_stream(locate_sys_prompt, locate_prompt)).strip()
             _elapsed = time.time() - _t0
             _total_time += _elapsed
             _step_times.append(("[3/8] 末尾定位", _elapsed))
@@ -223,26 +224,42 @@ class AnchorProofreadPipeline:
             raw_sentences = re.split(r'\n(?=\[\d{4}\])', numbered_text)
             raw_sentences = [s.strip() for s in raw_sentences if s.strip()]
         else:
-            raw_sentences = re.split(r'(?<=[。！？])', transcript_text)
-            raw_sentences = [s.strip() for s in raw_sentences if s.strip()]
+            segments = re.split(r'(?<=[。！？，、；：])', transcript_text)
+            segments = [s.strip() for s in segments if s.strip()]
+            raw_sentences = []
+            buf = ""
+            for seg in segments:
+                buf += seg
+                if len(buf) >= min_chars_per_item:
+                    raw_sentences.append(buf)
+                    buf = ""
+            if buf:
+                raw_sentences.append(buf)
             numbered_lines = []
             for i, s in enumerate(raw_sentences, start=1):
                 numbered_lines.append(f"[{i:04d}] {s}")
             numbered_text = "\n".join(numbered_lines)
             numbered_draft_filename.write_text(numbered_text, encoding="utf-8")
             n_ratio = len(numbered_text) / len(transcript_text) * 100
-            print(f"{Color.GREEN}✅ 编号稿已生成: {numbered_draft_filename.name}（共 {len(raw_sentences)} 句，字数 {len(numbered_text)} / 逐字稿 {len(transcript_text)} = {n_ratio:.1f}%）{Color.END}")
+            avg_chars = sum(len(s) for s in raw_sentences) / len(raw_sentences) if raw_sentences else 0
+            print(f"{Color.GREEN}✅ 编号稿已生成: {numbered_draft_filename.name}（共 {len(raw_sentences)} 项，均长 {avg_chars:.0f} 字，阈值 {min_chars_per_item} 字，总字数 {len(numbered_text)} / 逐字稿 {len(transcript_text)} = {n_ratio:.1f}%）{Color.END}")
 
         total_sentences = len(raw_sentences)
 
         # -- 5b. LLM 调用（输出缓存：编号校对稿存在则复用） --
         anchor_engine = _init("编号锚点校对", anchor_model_key)
-        if anchor_output_filename.exists():
+        force_regenerate = False
+        if anchor_output_filename.exists() and not force_regenerate:
             raw_output = anchor_output_filename.read_text("utf-8")
             a_ratio = len(raw_output) / len(numbered_text) * 100
             print(f"{Color.GREEN}✅ 检测到已存在编号校对稿，直接复用: {anchor_output_filename.name}{Color.END}")
             print(f"📊 浓缩率：编号校对稿 {len(raw_output)} / 编号稿 {len(numbered_text)} = {a_ratio:.1f}%")
-        else:
+            if a_ratio < 70.0:
+                choice = input(f"{Color.ORANGE}⚠️ 浓缩率 {a_ratio:.1f}% 低于 70%，是否重新生成编号校对稿？(y/n): {Color.END}").strip().lower()
+                if choice == "y":
+                    force_regenerate = True
+                    print(f"{Color.ORANGE}♻️ 删除旧编号校对稿，重新生成...{Color.END}")
+        if not anchor_output_filename.exists() or force_regenerate:
             self._confirm_step("编号锚点校对", debug)
             anchor_prompt = anchor_user_prompt_template.format(
                 transcript_text=numbered_text,
@@ -251,7 +268,7 @@ class AnchorProofreadPipeline:
             )
             print(f"正在调用 {anchor_engine.model_name} 进行编号锚点校对...")
             _t0 = time.time()
-            raw_output = anchor_engine.generate(anchor_sys_prompt, anchor_prompt)
+            raw_output = "".join(anchor_engine.generate_stream(anchor_sys_prompt, anchor_prompt))
             _elapsed = time.time() - _t0
             _total_time += _elapsed
             _step_times.append(("[5/8] 编号锚点校对", _elapsed))
@@ -265,21 +282,27 @@ class AnchorProofreadPipeline:
         # -- 5c. 验证编号完整性 --
         print(f"\n--- 编号完整性验证 ---")
         _verify_ok = False
+        _verify_msg = ""
         output_numbers = re.findall(r'\[(\d{4})\]', raw_output)
         if not output_numbers:
-            print(f"❌ 输出中未检测到任何编号，LLM 可能未按要求输出。")
+            _verify_msg = "❌ 输出中未检测到任何编号"
+            print(_verify_msg)
         else:
             output_nums_int = [int(n) for n in output_numbers]
             missing = [i for i in range(1, total_sentences + 1) if output_nums_int.count(i) == 0]
             duplicate = [(i, output_nums_int.count(i)) for i in range(1, total_sentences + 1) if output_nums_int.count(i) > 1]
             if not missing and not duplicate:
                 _verify_ok = True
-                print(f"{Color.GREEN}✅ 编号序列完整！全部 {total_sentences} 句均已输出（1:1 对应）{Color.END}")
+                _verify_msg = f"编号序列完整，全部 {total_sentences} 句均已输出"
+                print(f"{Color.GREEN}✅ {_verify_msg}{Color.END}")
             else:
+                parts = []
                 if missing:
-                    print(f"⚠️ 缺失编号 ({len(missing)} 个): {missing[:20]}{'...' if len(missing)>20 else ''}")
+                    parts.append(f"缺失编号 ({len(missing)} 个): {missing[:20]}{'...' if len(missing)>20 else ''}")
                 if duplicate:
-                    print(f"⚠️ 重复编号: {[f'{n}(×{c})' for n, c in duplicate[:10]]}")
+                    parts.append(f"重复编号: {[f'{n}(×{c})' for n, c in duplicate[:10]]}")
+                _verify_msg = "; ".join(parts)
+                print(f"⚠️ {_verify_msg}")
             print(f"----------------------------")
 
         # ═══════════════════════════════════
@@ -290,6 +313,7 @@ class AnchorProofreadPipeline:
         if check_engine and check_sys_prompt and check_user_prompt_template:
             if check_filename.exists():
                 _no_loss = None  # unknown (cached, can't determine)
+                _check_report_text = check_filename.read_text("utf-8").strip()
                 print(f"{Color.GREEN}✅ 检测到已存在遗漏检查报告，直接复用: {check_filename.name}{Color.END}")
             else:
                 self._confirm_step("遗漏检查", debug)
@@ -299,7 +323,7 @@ class AnchorProofreadPipeline:
                 )
                 print(f"调用中...")
                 _t0 = time.time()
-                check_report = check_engine.generate(check_sys_prompt, check_prompt)
+                check_report = "".join(check_engine.generate_stream(check_sys_prompt, check_prompt))
                 _elapsed = time.time() - _t0
                 _total_time += _elapsed
                 _step_times.append(("[6/8] 遗漏检查", _elapsed))
@@ -309,9 +333,11 @@ class AnchorProofreadPipeline:
                 print(f"{Color.GREEN}✅ 遗漏检查报告已保存至: {check_filename.name}{Color.END}")
                 if "【无遗漏信息】" in check_report or "完美" in check_report:
                     _no_loss = True
+                    _check_report_text = check_report.strip()
                     print(f"{Color.GREEN}  ✓ 检查结果：无关键信息遗漏{Color.END}")
                 else:
                     _no_loss = False
+                    _check_report_text = check_report.strip()
                     print(f"  ⚠️ 检查结果：可能有遗漏，请查看报告")
 
         # ═══════════════════════════════════
@@ -406,22 +432,22 @@ class AnchorProofreadPipeline:
         print(f"{Color.ORANGE}───────────────────────────────────{Color.END}")
         # 编号验证结果
         try:
-            _verify_ok
+            _verify_msg
         except NameError:
-            _verify_ok = True  # fresh file, assume complete
+            _verify_msg = "（跳过）"
         if _verify_ok:
-            print(f"{Color.GREEN}  ✓ 编号验证：序列完整，无缺失{Color.END}")
+            print(f"{Color.GREEN}  ✓ 编号验证：{_verify_msg}{Color.END}")
         else:
-            print(f"  ⚠️ 编号验证：存在缺失编号，请查看上方验证详情")
+            print(f"  ⚠️ 编号验证：{_verify_msg}")
         # 遗漏检查结果
         try:
-            _no_loss
+            _check_report_text
         except NameError:
-            _no_loss = None
+            _check_report_text = "（跳过）"
         if _no_loss is True:
             print(f"{Color.GREEN}  ✓ 遗漏检查：无关键信息遗漏{Color.END}")
         elif _no_loss is False:
-            print(f"{Color.ORANGE}  ⚠️ 遗漏检查：可能有遗漏，请查看遗漏检查报告{Color.END}")
+            print(f"{Color.ORANGE}  ⚠️ 遗漏检查：可能有遗漏，详见遗漏检查文件{Color.END}")
         print(f"===========================================\n")
 
     # ── 工具方法 ─────────────────────────────

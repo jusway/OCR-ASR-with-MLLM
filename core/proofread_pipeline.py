@@ -135,7 +135,7 @@ class AudioProcessingPipeline:
                     fuzzy_reference_text=fuzzy_reference_text
                 )
                 _t0 = time.time()
-                coverage_result = self._coverage_engine.generate(coverage_sys_prompt, coverage_prompt)
+                coverage_result = "".join(self._coverage_engine.generate_stream(coverage_sys_prompt, coverage_prompt))
                 _elapsed = time.time() - _t0
                 _total_time += _elapsed
                 print(f"{Color.GREEN}⏱️ 覆盖度检查模型调用耗时: {self._format_time(_elapsed)}")
@@ -180,7 +180,7 @@ class AudioProcessingPipeline:
                     example_text=example_text,
                 )
                 _t0 = time.time()
-                written_text = self.text_engine.generate(text_sys_prompt, user_prompt)
+                written_text = "".join(self.text_engine.generate_stream(text_sys_prompt, user_prompt))
                 _elapsed = time.time() - _t0
                 _total_time += _elapsed
                 print(f"{Color.GREEN}⏱️ 校对稿模型调用耗时: {self._format_time(_elapsed)}")
@@ -220,7 +220,7 @@ class AudioProcessingPipeline:
                     written_text=written_text,
                 )
                 _t0 = time.time()
-                verification_report = self._verifier_engine.generate(verifier_sys_prompt, verifier_user_prompt)
+                verification_report = "".join(self._verifier_engine.generate_stream(verifier_sys_prompt, verifier_user_prompt))
                 _elapsed = time.time() - _t0
                 _total_time += _elapsed
                 print(f"{Color.GREEN}⏱️ 信息丢失检查模型调用耗时: {self._format_time(_elapsed)}")
@@ -274,7 +274,7 @@ class AudioProcessingPipeline:
                 fuzzy_reference_text=fuzzy_reference_text
             )
             _t0 = time.time()
-            extracted = self._extract_engine.generate(extract_sys_prompt, extract_prompt).strip()
+            extracted = "".join(self._extract_engine.generate_stream(extract_sys_prompt, extract_prompt)).strip()
             _elapsed = time.time() - _t0
             _total_time += _elapsed
             print(f"{Color.GREEN}⏱️ 定位提取原文模型调用耗时: {self._format_time(_elapsed)}")
