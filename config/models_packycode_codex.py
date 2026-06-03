@@ -7,6 +7,12 @@ CODEX_MODELS = {
         "group": "codex",
         "enable_thinking": False,
     }),
+    "packy-codex-gpt-5.5-temp0": (CodexPackyCodeText, {
+        "model_name": "gpt-5.5",
+        "group": "codex",
+        "enable_thinking": False,
+        "temperature": 0.0,
+    }),
     "packy-codex-gpt-5.4-nothink": (CodexPackyCodeText, {
         "model_name": "gpt-5.4",
         "group": "codex",

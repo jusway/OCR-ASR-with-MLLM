@@ -15,17 +15,29 @@
 """
 
 import re
-import subprocess
 import time
 from pathlib import Path
+from typing import Any
 
-from core.utils import Color
+from core.utils import Color, format_duration
 from core.asr_engine import Qwen3ASRFlashFiletrans
-from 常用脚本.脚注重排 import rearrange_footnotes
+
+from .pipeline_steps.step_asr import step_asr
+from .pipeline_steps.step_fuzzy import step_fuzzy_text
+from .pipeline_steps.step_rearrange import step_rearrange
+from .pipeline_steps.step_locate import step_locate_and_precision
+from .pipeline_steps.step_anchor import step_anchor_proofread
+from .pipeline_steps.step_miss_check import step_miss_check
+from .pipeline_steps.step_remove_numbers import step_remove_numbers
+from .pipeline_steps.step_finalize import step_finalize
 
 
 class AnchorProofreadPipeline:
     """编号锚点校对流水线。融合精准末端定位 + 编号锚点防遗漏机制。"""
+
+    # ═══════════════════════════════════════════════════════════
+    # 公共入口
+    # ═══════════════════════════════════════════════════════════
 
     def run(self,
             folder_path,
@@ -42,16 +54,71 @@ class AnchorProofreadPipeline:
             check_sys_prompt="",
             check_user_prompt_template="",
             anchor_model_key=None,
-             last_n_chars=1000,
-             enable_mark_quotes=True,
-             min_chars_per_item=80,
-             debug=False):
+            last_n_chars=1000,
+            enable_mark_quotes=True,
+            enable_miss_check=True,
+            min_chars_per_item=80,
+            debug=False):
 
-        # ── 初始化引擎 ─────────────────────
-        def _init(label, key):
-            cls, kwargs = available_models[key]
-            print(f"正在初始化 {cls.__name__} 引擎 ({key})...")
-            return cls(**kwargs)
+        state = self._setup_state(
+            folder_path, asr_model_name, available_models,
+            anchor_model_key, locate_model_key, check_model_key, debug,
+        )
+
+        # [0/8] ASR 转录
+        transcript_text = step_asr(self, state)
+
+        # [1/8] 模糊原文
+        fuzzy_ref, duration = step_fuzzy_text(self, state)
+
+        # [2/8] 脚注重排
+        fuzzy_ref = step_rearrange(self, state, fuzzy_ref)
+
+        # [3/8] + [4/8] 末尾定位 → 精准原文
+        precision_text, precise_body = step_locate_and_precision(
+            self, state, fuzzy_ref, transcript_text,
+            locate_sys_prompt, locate_user_prompt_template, last_n_chars,
+        )
+
+        # [5/8] 编号锚点校对
+        raw_output, verify_ok, verify_msg = step_anchor_proofread(
+            self, state, transcript_text, precision_text,
+            anchor_sys_prompt, anchor_user_prompt_template,
+            min_chars_per_item,
+        )
+
+        # [6/8] 遗漏检查
+        no_loss = None
+        check_text = None
+        if enable_miss_check:
+            no_loss, check_text = step_miss_check(
+                self, state, transcript_text, raw_output,
+                check_sys_prompt, check_user_prompt_template,
+            )
+
+        # [7/8] 脚本去编号
+        final_text = step_remove_numbers(self, state, raw_output)
+
+        # [8/8] 插入元数据 + 标注 + 汇总
+        step_finalize(
+            self, state, final_text, precise_body, transcript_text,
+            year, author, duration, enable_mark_quotes,
+            verify_ok, verify_msg, no_loss, check_text,
+        )
+
+    # ═══════════════════════════════════════════════════════════
+    # Setup
+    # ═══════════════════════════════════════════════════════════
+
+    def _setup_state(self, folder_path, asr_model_name,
+                     available_models, anchor_model_key,
+                     locate_model_key, check_model_key, debug):
+        """初始化所有文件路径、引擎、计时变量，返回状态字典。"""
+        s: dict[str, Any] = {
+            "debug": debug,
+            "total_time": 0.0,
+            "step_times": [],
+        }
 
         if not folder_path.exists():
             print(f"{Color.RED}错误：找不到文件夹 {folder_path}")
@@ -61,464 +128,185 @@ class AnchorProofreadPipeline:
         if not audio_files:
             print(f"{Color.RED}错误：在 {folder_path} 下没找到 .mp3 文件")
             exit(1)
-        audio_path_obj = next((f for f in audio_files if f.stem == folder_path.name), audio_files[0])
-        audio_path = str(audio_path_obj)
-        base_name = audio_path_obj.stem
-        parent_dir = audio_path_obj.parent
+
+        audio_path_obj = next(
+            (f for f in audio_files if f.stem == folder_path.name),
+            audio_files[0],
+        )
+        s["audio_path"] = str(audio_path_obj)
+        s["base_name"] = audio_path_obj.stem
+        s["parent_dir"] = audio_path_obj.parent
 
         print(f"{Color.GREEN}已自动识别任务：{Color.END}")
         print(f"  - 文件夹: {folder_path}")
         print(f"  - 音频文件: {audio_path_obj.name}")
 
-        fuzzy_filename = parent_dir / "第1步_模糊原文.md"
-        transcript_filename = parent_dir / f"{base_name}_逐字稿.md"
-        precision_filename = parent_dir / f"第4步_{base_name}_精准原文.md"
-        numbered_draft_filename = parent_dir / f"第5步_{base_name}_编号稿.md"
-        anchor_output_filename = parent_dir / f"第5步_{base_name}_编号校对稿.md"
-        final_filename = parent_dir / f"第7步_{base_name}_最终校对稿.md"
-        check_filename = parent_dir / f"第6步_{base_name}_遗漏检查.md"
+        p = s["parent_dir"]
+        s["files"] = {
+            "fuzzy":           p / "第1步_模糊原文.md",
+            "transcript":      p / f"{s['base_name']}_逐字稿.md",
+            "precision":       p / f"第4步_{s['base_name']}_精准原文.md",
+            "precise_body":    p / "第4步_精准原文_正文.md",
+            "numbered":        p / f"第5步_{s['base_name']}_编号稿.md",
+            "anchor_output":   p / f"第5步_{s['base_name']}_编号校对稿.md",
+            "check":           p / f"第6步_{s['base_name']}_遗漏检查.md",
+            "final":           p / f"第7步_{s['base_name']}_最终校对稿.md",
+        }
 
-        _total_time = 0.0
-        _step_times = []
+        s["available_models"] = available_models
+        s["anchor_model_key"] = anchor_model_key
+        s["locate_model_key"] = locate_model_key
+        s["check_model_key"] = check_model_key
 
-        # ── 初始化 ASR 引擎 ────────────
-        print(f"正在初始化 Qwen3ASRFlashFiletrans 引擎...")
-        asr_engine = Qwen3ASRFlashFiletrans(model_name=asr_model_name)
+        print("正在初始化 Qwen3ASRFlashFiletrans 引擎...")
+        s["asr_engine"] = Qwen3ASRFlashFiletrans(model_name=asr_model_name)
 
-        def _save_thinking(step_prefix, engine, label):
-            if hasattr(engine, '_last_reasoning_content') and engine._last_reasoning_content:
-                thinking_path = parent_dir / f"{step_prefix}思维链_{label}.md"
-                thinking_path.write_text(engine._last_reasoning_content, encoding="utf-8")
-                engine._last_reasoning_content = None
-                print(f"{Color.GREEN}🧠 思维链已保存: {thinking_path.name}{Color.END}")
+        return s
 
-        # ═══════════════════════════════════
-        # 步骤 [0/8]：ASR 转录（带缓存）
-        # ═══════════════════════════════════
-        print(f"\n[0/8] ASR 转录 → 逐字稿.md...")
-        if transcript_filename.exists():
-            print(f"{Color.GREEN}✅ 检测到已存在逐字稿，直接复用: {transcript_filename.name}{Color.END}")
-            transcript_text = transcript_filename.read_text("utf-8")
-        else:
-            print(f"正在调用 ASR 引擎生成逐字稿...")
-            _t0 = time.time()
-            transcript_text = asr_engine.recognize(audio_path)
-            _elapsed = time.time() - _t0
-            _total_time += _elapsed
-            _step_times.append(("[0/8] ASR 转录", _elapsed))
-            print(f"⏱️ ASR 转录耗时: {self._format_time(_elapsed)}")
-            transcript_filename.write_text(transcript_text, encoding="utf-8")
-            print(f"{Color.GREEN}逐字稿已保存至: {transcript_filename}{Color.END}")
+    # ═══════════════════════════════════════════════════════════
+    # Helpers（供步骤模块调用）
+    # ═══════════════════════════════════════════════════════════
 
-        # ═══════════════════════════════════
-        # 步骤 [1/8]：模糊原文
-        # ═══════════════════════════════════
-        print(f"\n[1/8] 粘贴模糊原文到 {fuzzy_filename.name}...")
-        if not fuzzy_filename.exists():
-            fuzzy_filename.write_text("", encoding="utf-8")
-            print(f"{Color.GREEN}✅ 已创建 {fuzzy_filename}{Color.END}")
-        else:
-            print(f"检测到已存在 {fuzzy_filename.name}")
-        duration = self._get_audio_duration(audio_path)
-        print(f"⏱️ 音频时长: {duration}，供参考选取原文范围")
-        print(f"请在 {fuzzy_filename.name} 中整理模糊原文（开头已有上节课结尾，只需粘贴即可），保存后回到此处按回车继续...")
-        input()
-        _start_time = time.time()
-        fuzzy_reference_text = fuzzy_filename.read_text("utf-8").strip()
-        if not fuzzy_reference_text:
-            print(f"{Color.RED}错误：模糊原文为空，请填入内容后重新运行。")
-            exit(1)
+    def _init_model(self, s, label, key):
+        """初始化一个 LLM 引擎（带打印）。"""
+        cls, kwargs = s["available_models"][key]
+        print(f"正在初始化 {cls.__name__} 引擎 ({key})...")
+        return cls(**kwargs)
 
-        # ═══════════════════════════════════
-        # 步骤 [2/8]：脚注重排
-        # ═══════════════════════════════════
-        rearranged_fn = parent_dir / "第2步_模糊原文_已重排.md"
-        print(f"\n[2/8] 脚注重排 → {rearranged_fn.name}...")
-        if rearranged_fn.exists():
-            fuzzy_reference_text = rearranged_fn.read_text("utf-8").strip()
-            print(f"{Color.GREEN}✅ 检测到已存在重排后模糊原文，直接复用: {rearranged_fn.name}{Color.END}")
-        else:
-            _t0 = time.time()
-            fuzzy_reference_text = rearrange_footnotes(fuzzy_reference_text)
-            rearranged_fn.write_text(fuzzy_reference_text, encoding="utf-8")
-            print(f"{Color.GREEN}✅ 脚注重排完成 → {rearranged_fn.name}{Color.END}")
+    def _llm_generate(self, s, engine, sys_prompt, prompt,
+                       step_label, think_prefix, think_label):
+        """通用 LLM 调用：计时 → 调用 → 保存思维链 → 返回 (result, elapsed)。"""
+        print("调用中...")
+        t0 = time.time()
+        result = "".join(engine.generate_stream(sys_prompt, prompt))
+        elapsed = time.time() - t0
+        s["total_time"] += elapsed
+        s["step_times"].append((step_label, elapsed))
+        self._save_thinking(s, engine, think_prefix, think_label)
+        label_tail = step_label.split('] ')[-1] if '] ' in step_label else step_label
+        print(f"⏱️ {label_tail}耗时: {format_duration(elapsed)}")
+        return result, elapsed
 
-        # ═══════════════════════════════════
-        # 步骤 [3/8]：末尾定位 → 精准原文
-        # ═══════════════════════════════════
-        print(f"\n[3/8] 末尾定位 → 末尾定位.md...")
-        locate_engine = _init("末尾定位", locate_model_key)
-        no_body_extract = False
-        if precision_filename.exists():
-            print(f"{Color.GREEN}✅ 检测到已存在精准原文，直接复用: {precision_filename.name}{Color.END}")
-            precision_text = precision_filename.read_text("utf-8")
-        else:
-            self._confirm_step("末尾定位", debug)
-            tail_text = transcript_text[-last_n_chars:]
-            locate_prompt = locate_user_prompt_template.format(
-                tail_text=tail_text,
-                fuzzy_reference_text=fuzzy_reference_text,
-                last_n_chars=last_n_chars,
-            )
-            print(f"调用中...")
-            _t0 = time.time()
-            last_sentence = "".join(locate_engine.generate_stream(locate_sys_prompt, locate_prompt)).strip()
-            _elapsed = time.time() - _t0
-            _total_time += _elapsed
-            _step_times.append(("[3/8] 末尾定位", _elapsed))
-            _save_thinking("第3步_", locate_engine, "末尾定位")
-            print(f"⏱️ 末尾定位耗时: {self._format_time(_elapsed)}")
-            locate_out_filename = parent_dir / f"第3步_{base_name}_末尾定位.md"
-            locate_out_filename.write_text(last_sentence, encoding="utf-8")
-            print(f"{Color.GREEN}✅ 末尾已保存至: {locate_out_filename.name}{Color.END}")
-
-            # ── 步骤 [4/8]：精准原文 ──
-            print(f"\n[4/8] Python 截断 → 精准原文.md...")
-            if last_sentence == "【无匹配片段】":
-                print(f"⚠️ 模型返回「无匹配片段」，精准原文和正文将为空。")
-                precision_text = "暂无参考资料"
-                precise_body = ""
-                no_body_extract = True
-            else:
-                no_body_extract = False
-                idx = fuzzy_reference_text.find(last_sentence)
-                if idx == -1:
-                    print(f"{Color.RED}❌ 未在模糊原文中找到末尾，模型返回的结果不正确。请检查末尾定位结果后重试。{Color.END}")
-                    exit(1)
-                end_pos = idx + len(last_sentence)
-                precision_text = fuzzy_reference_text[:end_pos]
-
-            precision_filename.write_text(precision_text, encoding="utf-8")
-            print(f"{Color.GREEN}✅ 精准原文已保存至: {precision_filename.name}{Color.END}")
-
-        # ── 提取精准原文中的摩诃止观正文 ──
-        precise_body_fn = parent_dir / "第4步_精准原文_正文.md"
-        if no_body_extract:
-            precise_body_fn.write_text(precise_body, encoding="utf-8")
-        elif precise_body_fn.exists():
-            precise_body = precise_body_fn.read_text("utf-8").strip()
-            print(f"{Color.GREEN}✅ 检测到已存在精准原文正文，直接复用: {precise_body_fn.name}{Color.END}")
-        else:
-            clean_text = re.sub(r'\[注脚：.*?\]', '', precision_text, flags=re.DOTALL)
-            precise_body_parts = []
-            for line in clean_text.splitlines():
-                if "**" in line:
-                    clean = re.sub(r'[\*\\]', '', line).strip()
-                    if clean:
-                        precise_body_parts.append(clean)
-            precise_body = "\n\n".join(precise_body_parts)
-            precise_body_fn.write_text(precise_body, encoding="utf-8")
-            print(f"{Color.GREEN}✅ 精准原文正文已提取至: {precise_body_fn.name}（{len(precise_body)} 字）{Color.END}")
-
-        # ═══════════════════════════════════
-        # 步骤 [5/8]：编号锚点校对（核心变更）
-        # ═══════════════════════════════════
-        print(f"\n[5/8] 编号锚点校对...")
-
-        # -- 5a. 生成编号稿（输入缓存：编号稿存在则复用） --
-        if numbered_draft_filename.exists():
-            numbered_text = numbered_draft_filename.read_text("utf-8")
-            n_ratio = len(numbered_text) / len(transcript_text) * 100
-            print(f"{Color.GREEN}✅ 检测到已存在编号稿，直接复用: {numbered_draft_filename.name}{Color.END}")
-            print(f"📊 字数统计：编号稿 {len(numbered_text)} / 逐字稿 {len(transcript_text)} = {n_ratio:.1f}%")
-            raw_sentences = re.split(r'\n(?=\[\d{4}\])', numbered_text)
-            raw_sentences = [s.strip() for s in raw_sentences if s.strip()]
-        else:
-            segments = re.split(r'(?<=[。！？，、；：])', transcript_text)
-            segments = [s.strip() for s in segments if s.strip()]
-            raw_sentences = []
-            buf = ""
-            for seg in segments:
-                buf += seg
-                if len(buf) >= min_chars_per_item:
-                    raw_sentences.append(buf)
-                    buf = ""
-            if buf:
-                raw_sentences.append(buf)
-            numbered_lines = []
-            for i, s in enumerate(raw_sentences, start=1):
-                numbered_lines.append(f"[{i:04d}] {s}")
-            numbered_text = "\n".join(numbered_lines)
-            numbered_draft_filename.write_text(numbered_text, encoding="utf-8")
-            n_ratio = len(numbered_text) / len(transcript_text) * 100
-            avg_chars = sum(len(s) for s in raw_sentences) / len(raw_sentences) if raw_sentences else 0
-            print(f"{Color.GREEN}✅ 编号稿已生成: {numbered_draft_filename.name}（共 {len(raw_sentences)} 项，均长 {avg_chars:.0f} 字，阈值 {min_chars_per_item} 字，总字数 {len(numbered_text)} / 逐字稿 {len(transcript_text)} = {n_ratio:.1f}%）{Color.END}")
-
-        total_sentences = len(raw_sentences)
-
-        # -- 5b. LLM 调用（输出缓存：编号校对稿存在则复用） --
-        anchor_engine = _init("编号锚点校对", anchor_model_key)
-        force_regenerate = False
-        if anchor_output_filename.exists() and not force_regenerate:
-            raw_output = anchor_output_filename.read_text("utf-8")
-            a_ratio = len(raw_output) / len(numbered_text) * 100
-            print(f"{Color.GREEN}✅ 检测到已存在编号校对稿，直接复用: {anchor_output_filename.name}{Color.END}")
-            print(f"📊 浓缩率：编号校对稿 {len(raw_output)} / 编号稿 {len(numbered_text)} = {a_ratio:.1f}%")
-            if a_ratio < 70.0:
-                choice = input(f"{Color.ORANGE}⚠️ 浓缩率 {a_ratio:.1f}% 低于 70%，是否重新生成编号校对稿？(y/n): {Color.END}").strip().lower()
-                if choice == "y":
-                    force_regenerate = True
-                    print(f"{Color.ORANGE}♻️ 删除旧编号校对稿，重新生成...{Color.END}")
-        if not anchor_output_filename.exists() or force_regenerate:
-            self._confirm_step("编号锚点校对", debug)
-            anchor_prompt = anchor_user_prompt_template.format(
-                transcript_text=numbered_text,
-                total_sentences=total_sentences,
-                precision_text=precision_text,
-            )
-            print(f"正在调用 {anchor_engine.model_name} 进行编号锚点校对...")
-            _t0 = time.time()
-            raw_output = "".join(anchor_engine.generate_stream(anchor_sys_prompt, anchor_prompt))
-            _elapsed = time.time() - _t0
-            _total_time += _elapsed
-            _step_times.append(("[5/8] 编号锚点校对", _elapsed))
-            _save_thinking("第5步_", anchor_engine, "编号锚点校对")
-            print(f"⏱️ 编号锚点校对耗时: {self._format_time(_elapsed)}")
-            anchor_output_filename.write_text(raw_output, encoding="utf-8")
-            print(f"{Color.GREEN}✅ 编号校对稿已保存至: {anchor_output_filename.name}{Color.END}")
-            a_ratio = len(raw_output) / len(numbered_text) * 100
-            print(f"📊 浓缩率：编号校对稿 {len(raw_output)} / 编号稿 {len(numbered_text)} = {a_ratio:.1f}%")
-
-        # -- 5c. 验证编号完整性 --
-        print(f"\n--- 编号完整性验证 ---")
-        _verify_ok = False
-        _verify_msg = ""
-        output_numbers = re.findall(r'\[(\d{4})\]', raw_output)
-        if not output_numbers:
-            _verify_msg = "❌ 输出中未检测到任何编号"
-            print(_verify_msg)
-        else:
-            output_nums_int = [int(n) for n in output_numbers]
-            missing = [i for i in range(1, total_sentences + 1) if output_nums_int.count(i) == 0]
-            duplicate = [(i, output_nums_int.count(i)) for i in range(1, total_sentences + 1) if output_nums_int.count(i) > 1]
-            if not missing and not duplicate:
-                _verify_ok = True
-                _verify_msg = f"编号序列完整，全部 {total_sentences} 句均已输出"
-                print(f"{Color.GREEN}✅ {_verify_msg}{Color.END}")
-            else:
-                parts = []
-                if missing:
-                    parts.append(f"缺失编号 ({len(missing)} 个): {missing[:20]}{'...' if len(missing)>20 else ''}")
-                if duplicate:
-                    parts.append(f"重复编号: {[f'{n}(×{c})' for n, c in duplicate[:10]]}")
-                _verify_msg = "; ".join(parts)
-                print(f"⚠️ {_verify_msg}")
-            print(f"----------------------------")
-
-        # ═══════════════════════════════════
-        # 步骤 [6/8]：遗漏检查
-        # ═══════════════════════════════════
-        print(f"\n[6/8] 遗漏检查...")
-        check_engine = _init("遗漏检查", check_model_key) if check_model_key else None
-        if check_engine and check_sys_prompt and check_user_prompt_template:
-            if check_filename.exists():
-                _no_loss = None  # unknown (cached, can't determine)
-                _check_report_text = check_filename.read_text("utf-8").strip()
-                print(f"{Color.GREEN}✅ 检测到已存在遗漏检查报告，直接复用: {check_filename.name}{Color.END}")
-            else:
-                self._confirm_step("遗漏检查", debug)
-                check_prompt = check_user_prompt_template.format(
-                    transcript_text=numbered_text,
-                    written_text=raw_output,
-                )
-                print(f"调用中...")
-                _t0 = time.time()
-                check_report = "".join(check_engine.generate_stream(check_sys_prompt, check_prompt))
-                _elapsed = time.time() - _t0
-                _total_time += _elapsed
-                _step_times.append(("[6/8] 遗漏检查", _elapsed))
-                _save_thinking("第6步_", check_engine, "遗漏检查")
-                print(f"⏱️ 遗漏检查耗时: {self._format_time(_elapsed)}")
-                check_filename.write_text(check_report, encoding="utf-8")
-                print(f"{Color.GREEN}✅ 遗漏检查报告已保存至: {check_filename.name}{Color.END}")
-                if "【无遗漏信息】" in check_report or "完美" in check_report:
-                    _no_loss = True
-                    _check_report_text = check_report.strip()
-                    print(f"{Color.GREEN}  ✓ 检查结果：无关键信息遗漏{Color.END}")
-                else:
-                    _no_loss = False
-                    _check_report_text = check_report.strip()
-                    print(f"  ⚠️ 检查结果：可能有遗漏，请查看报告")
-
-        # ═══════════════════════════════════
-        # 步骤 [7/8]：脚本去编号
-        # ═══════════════════════════════════
-        print(f"\n[7/8] 脚本去除编号 → 最终校对稿.md...")
-        if final_filename.exists():
-            print(f"{Color.GREEN}✅ 检测到已存在最终校对稿，直接复用: {final_filename.name}{Color.END}")
-            final_text = final_filename.read_text("utf-8")
-        else:
-            cleaned_parts = []
-            for m in re.finditer(r'\[(\d{4})\]\s*', raw_output):
-                start = m.end()
-                next_match = re.search(r'\[(\d{4})\]\s*', raw_output[start:])
-                if next_match:
-                    end = start + next_match.start()
-                else:
-                    end = len(raw_output)
-                content = raw_output[start:end].strip()
-                if content:
-                    cleaned_parts.append(content)
-            # 合并未以。！？结尾的不完整段落
-            merged = []
-            buf = ""
-            for c in cleaned_parts:
-                if buf:
-                    buf += c
-                else:
-                    buf = c
-                if buf and buf[-1] in '。！？':
-                    merged.append(buf)
-                    buf = ""
-            if buf:
-                merged.append(buf)
-            final_text = "\n\n".join(merged) if merged else raw_output
-            final_filename.write_text(final_text, encoding="utf-8")
-            print(f"{Color.GREEN}✅ 最终校对稿已保存至: {final_filename.name}{Color.END}")
-
-        # 精准原文正文加粗标记（可选开关）
-        if enable_mark_quotes:
-            marked_text = self._mark_quotes(final_text, precise_body)
-            if marked_text != final_text:
-                count = marked_text.count('**') // 2
-                print(f"{Color.GREEN}✅ 已在最终校对稿中标注 {count} 处摩诃止观原文引用{Color.END}")
-                final_filename.write_text(marked_text, encoding="utf-8")
-                final_text = marked_text
-
-        # ═══════════════════════════════════
-        print(f"\n[8/8] 插入元数据...")
-        current_text = final_filename.read_text("utf-8")
-        if current_text.strip().startswith("> 标题："):
-            parts = current_text.split("\n---\n\n", 1)
-            current_text = parts[1] if len(parts) > 1 else current_text
-            print(f"♻️ 检测到已有旧元数据，替换为本次元数据...")
-        main_body = precise_body
-        main_body_header = f"> 摩诃止观正文：{main_body.replace(chr(10), '')}\n" if main_body else ""
-        metadata_header = (
-            f"> 标题：{base_name}\n"
-            f"> 时间：{year}\n"
-            f"> 时长：{duration}\n"
-            f"> 作者：{author}\n"
-            f"{main_body_header}"
-            "\n---\n\n"
+    def _call_anchor_llm(self, s, engine, sys_prompt, prompt_template,
+                          numbered_text, total_sentences, precision_text,
+                          step_label):
+        """调用编号校对 LLM，保存结果，返回 raw_output。"""
+        self._confirm_step("编号锚点校对", s["debug"])
+        prompt = prompt_template.format(
+            transcript_text=numbered_text,
+            total_sentences=total_sentences,
+            precision_text=precision_text,
         )
-        final_filename.write_text(metadata_header + current_text, encoding="utf-8")
-        print(f"{Color.GREEN}✅ 元数据已成功插入校对稿开头！{Color.END}")
-        if main_body:
-            print("📄 以下为插入的摩诃止观正文：")
-            print(main_body_header.replace("> 摩诃止观正文：", "").strip())
+        print(f"正在调用 {engine.model_name} 进行编号锚点校对...")
+        result, _ = self._llm_generate(
+            s, engine, sys_prompt, prompt,
+            step_label, "第5步_", "编号锚点校对",
+        )
+        s["files"]["anchor_output"].write_text(result, encoding="utf-8")
+        return result
 
-        # ═══════════════════════════════════
-        # 汇总
-        # ═══════════════════════════════════
-        print(f"\n{Color.GREEN}===========================================")
-        print(f"🎉 全部流程处理完成！{Color.END}")
-        # 字数统计
-        clean = final_text
-        if "---" in clean:
-            clean = clean.split("---", 1)[1]
-        clean = clean.replace("**", "").replace("\n", "")
-        clean_len = len(clean)
-        transcript_len = len(transcript_text)
-        final_ratio = clean_len / transcript_len * 100
-        print(f"{Color.ORANGE}📊 字数统计：最终校对稿 {clean_len} / 逐字稿 {transcript_len} = {final_ratio:.1f}%{Color.END}")
-        # 分步耗时
-        print(f"{Color.ORANGE}───────────────────────────────────{Color.END}")
-        for step_label, t in _step_times:
-            print(f"{Color.ORANGE}⏱️ {step_label}: {self._format_time(t)}{Color.END}")
-        print(f"{Color.ORANGE}⏱️ 全部模型调用总耗时: {self._format_time(_total_time)}{Color.END}")
-        _elapsed_real = time.time() - _start_time
-        print(f"{Color.ORANGE}⏱️ 实际运行总耗时: {self._format_time(_elapsed_real)}{Color.END}")
-        print(f"{Color.ORANGE}───────────────────────────────────{Color.END}")
-        # 编号验证结果
-        try:
-            _verify_msg
-        except NameError:
-            _verify_msg = "（跳过）"
-        if _verify_ok:
-            print(f"{Color.GREEN}  ✓ 编号验证：{_verify_msg}{Color.END}")
-        else:
-            print(f"  ⚠️ 编号验证：{_verify_msg}")
-        # 遗漏检查结果
-        try:
-            _check_report_text
-        except NameError:
-            _check_report_text = "（跳过）"
-        if _no_loss is True:
-            print(f"{Color.GREEN}  ✓ 遗漏检查：无关键信息遗漏{Color.END}")
-        elif _no_loss is False:
-            print(f"{Color.ORANGE}  ⚠️ 遗漏检查：可能有遗漏，详见遗漏检查文件{Color.END}")
-        print(f"===========================================\n")
+    def _save_thinking(self, s, engine, step_prefix, label):
+        """保存 LLM 思维链到文件。"""
+        if hasattr(engine, '_last_reasoning_content') and engine._last_reasoning_content:
+            path = s["parent_dir"] / f"{step_prefix}思维链_{label}.md"
+            path.write_text(engine._last_reasoning_content, encoding="utf-8")
+            engine._last_reasoning_content = None
+            print(f"{Color.GREEN}🧠 思维链已保存: {path.name}{Color.END}")
 
-    # ── 工具方法 ─────────────────────────────
-
-    @staticmethod
-    def _mark_quotes(final_text, precise_body):
-        """用 ** 标注 final_text 中与 precise_body 匹配的原文片段。"""
-        if not precise_body:
-            return final_text
-
-        # 细粒度切分 precise_body（逗号也切，提高短片段匹配率）
-        segments = re.split(r'(?<=[。！？，、；])', precise_body)
-        segments = [s.strip() for s in segments if s.strip()]
-        merged_segments = []
+    def _build_numbered_draft(self, transcript_text, min_chars_per_item):
+        """将逐字稿按标点切分并合并为编号稿。返回 (numbered_text, raw_sentences)。"""
+        segments = re.split(r'(?<=[。！？，、；：])', transcript_text)
+        segments = [x.strip() for x in segments if x.strip()]
+        sentences = []
         buf = ""
-        for c in segments:
-            if buf:
-                buf += c
-            else:
-                buf = c
-            if buf and buf[-1] in '。！？':
-                merged_segments.append(buf)
+        for seg in segments:
+            buf += seg
+            if len(buf) >= min_chars_per_item:
+                sentences.append(buf)
                 buf = ""
         if buf:
-            merged_segments.append(buf)
+            sentences.append(buf)
+        lines = [f"[{i + 1:04d}] {s}" for i, s in enumerate(sentences)]
+        return "\n".join(lines), sentences
 
-        # 收集匹配位置
-        markers = []
-        for seg in merged_segments:
-            if len(seg) < 5:
-                continue
-            idx = final_text.find(seg)
-            if idx != -1:
-                markers.append((idx, idx + len(seg)))
-                continue
-            # 最长公共子串扫描
-            min_len = max(int(len(seg) * 0.5), 5)
-            best = None
-            for w in range(len(seg), min_len - 1, -1):
-                for i in range(len(seg) - w + 1):
-                    sub = seg[i:i + w]
-                    idx = final_text.find(sub)
-                    if idx != -1:
-                        best = (idx, idx + w)
-                        break
-                if best:
-                    break
-            if best:
-                markers.append(best)
+    def _verify_numbering(self, raw_output, total_sentences):
+        """验证编号完整性。返回 (verify_ok, verify_msg, duplicate_list)。"""
+        print(f"\n--- 编号完整性验证 ---")
+        numbers = re.findall(r'\[(\d{4})\]', raw_output)
+        if not numbers:
+            msg = "❌ 输出中未检测到任何编号"
+            print(msg)
+            print("----------------------------")
+            return False, msg, []
 
-        if not markers:
-            return final_text
+        nums = [int(n) for n in numbers]
+        missing = [i for i in range(1, total_sentences + 1) if nums.count(i) == 0]
+        duplicate = [(i, nums.count(i)) for i in range(1, total_sentences + 1) if nums.count(i) > 1]
 
-        # 合并重叠标记
-        markers.sort()
+        if not missing and not duplicate:
+            msg = f"编号序列完整，全部 {total_sentences} 句均已输出"
+            print(f"{Color.GREEN}✅ {msg}{Color.END}")
+            print("----------------------------")
+            return True, msg, []
+
+        parts = []
+        if missing:
+            parts.append(f"缺失编号 ({len(missing)} 个): {missing[:20]}{'...' if len(missing) > 20 else ''}")
+        if duplicate:
+            parts.append(f"重复编号: {[f'{n}(×{c})' for n, c in duplicate[:10]]}")
+        msg = "; ".join(parts)
+        print(f"⚠️ {msg}")
+        print("----------------------------")
+        return False, msg, duplicate
+
+    def _extract_precise_body(self, precision_text):
+        """从精准原文中提取摩诃止观正文（** 包裹的行）。"""
+        clean_text = re.sub(r'\[注脚：.*?\]', '', precision_text, flags=re.DOTALL)
+        parts = []
+        for line in clean_text.splitlines():
+            if "**" in line:
+                clean = re.sub(r'[\*\\]', '', line).strip()
+                if clean:
+                    parts.append(clean)
+        return "\n\n".join(parts)
+
+    def _load_or_extract_precise_body(self, s, precision_text):
+        """获取精准原文正文（优先缓存）。"""
+        fn = s["files"]["precise_body"]
+        if fn.exists():
+            result = fn.read_text("utf-8").strip()
+            print(f"{Color.GREEN}✅ 检测到已存在精准原文正文，直接复用: {fn.name}{Color.END}")
+            return result
+        return self._extract_precise_body(precision_text)
+
+    @staticmethod
+    def _should_regenerate_concentration(a_ratio):
+        """浓缩率不在 70%-95% 区间时询问用户。返回 True 表示需要重新生成。"""
+        if 70.0 <= a_ratio <= 95.0:
+            return False
+        reason = "过低" if a_ratio < 70.0 else "过高"
+        choice = input(
+            f"{Color.ORANGE}⚠️ 浓缩率 {a_ratio:.1f}% {reason}，是否重新生成编号校对稿？(y/n): {Color.END}"
+        ).strip().lower()
+        return choice == "y"
+
+    @staticmethod
+    def _merge_sentences(parts):
+        """合并短句：buf 累加到句号结尾时 flush。"""
         merged = []
-        for s, e in markers:
-            if merged and s <= merged[-1][1]:
-                merged[-1] = (merged[-1][0], max(merged[-1][1], e))
-            else:
-                merged.append((s, e))
-
-        # 从后往前插入 **
-        chars = list(final_text)
-        for s, e in reversed(merged):
-            chars.insert(e, '**')
-            chars.insert(s, '**')
-        return ''.join(chars)
+        buf = ""
+        for c in parts:
+            buf = buf + c if buf else c
+            if buf and buf[-1] in '。！？':
+                merged.append(buf)
+                buf = ""
+        if buf:
+            merged.append(buf)
+        return merged
 
     @staticmethod
     def _confirm_step(label, debug):
+        """调试模式：暂停等待用户确认。"""
         if not debug:
             return
         choice = input(f"🔍 调试模式：即将执行【{label}】，输入 y 继续(n 退出): ").strip().lower()
@@ -526,23 +314,3 @@ class AnchorProofreadPipeline:
             print(f"{Color.RED}❌ 用户终止。{Color.END}")
             exit(0)
         print(f"{Color.GREEN}✅ 继续执行【{label}】...{Color.END}")
-
-    @staticmethod
-    def _get_audio_duration(audio_path):
-        result = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
-             "-of", "csv=p=0", str(audio_path)],
-            capture_output=True, text=True
-        )
-        duration_seconds = int(float(result.stdout.strip()))
-        hours, remainder = divmod(duration_seconds, 3600)
-        minutes, seconds = divmod(remainder, 60)
-        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-
-    @staticmethod
-    def _format_time(seconds):
-        minutes = int(seconds // 60)
-        secs = int(seconds % 60)
-        if minutes > 0:
-            return f"{minutes}分{secs}秒"
-        return f"{secs}秒"

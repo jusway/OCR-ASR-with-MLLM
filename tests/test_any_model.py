@@ -4,7 +4,7 @@ import os
 import time
 
 # ==================== 配置：改这里选模型 ====================
-MODEL_KEY = "packy-codex-gpt-5.5-nothink"
+MODEL_KEY = "packy-codex-gpt-5.5-temp0"
 # ===========================================================
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

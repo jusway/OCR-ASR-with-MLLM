@@ -123,6 +123,9 @@ class CodexPackyCodeText(PackyCodeText):
             "messages": messages,
             "stream": stream,
         }
+        # 仅在非默认值时传 temperature，避免上游 API 拒绝
+        if self.temperature != 1.0:
+            kwargs["temperature"] = self.temperature
         body = {}
         if self.group:
             body["group"] = self.group

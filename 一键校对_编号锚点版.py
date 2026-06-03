@@ -25,7 +25,7 @@ from core.anchor_proofread_pipeline import AnchorProofreadPipeline
 # ============================================================
 
 # 1) 任务文件夹（脚本自动找 .mp3）
-folder_path = Path(r"摩诃止观-定智法师 2017/11正说分/2019年3月19日摩诃止观正说分11第七正修阴入界境观不思议境007")
+folder_path = Path(r"摩诃止观-定智法师 2017/13正说分/2019年7月5日摩诃止观正说分13第七正修阴入界境破法遍053")
 
 # 2) 元数据
 year = "2019"
@@ -35,7 +35,7 @@ author = "定智法师"
 asr_model_name = "qwen3-asr-flash-filetrans"
 
 # 4) 截取 ASR 稿件末尾多少字用于定位末尾
-LAST_N_CHARS = 1000
+LAST_N_CHARS = 1500
 
 # 5) 编号稿每项最低字数（低于此字数则与下一段合并）
 MIN_CHARS_PER_ITEM = 80
@@ -46,12 +46,15 @@ DEBUG_MODE = False
 # 7) 是否对最终校对稿中的摩诃止观原文加 ** 标注
 ENABLE_MARK_QUOTES = True
 
+# 8) 是否进行遗漏检查（设为 False 则跳过步骤 6）
+ENABLE_MISS_CHECK = False
+
 
 # ============================================================
 # ── 步骤 1：末尾定位 ───
 # ============================================================
-# LOCATE_SELECTED_MODEL = "deepseek-pro-thinking-max" # 还不错
-LOCATE_SELECTED_MODEL = "packy-codex-gpt-5.5-nothink"
+LOCATE_SELECTED_MODEL = "deepseek-pro-thinking-max" # 还不错
+# LOCATE_SELECTED_MODEL = "packy-codex-gpt-5.5-nothink"
 locate_system_prompt = """\
 ## 背景
 讲稿末尾是一位师父在讲解《摩诃止观辅行传弘决辑注》某一集录音的ASR转录稿件。
@@ -158,5 +161,6 @@ if __name__ == "__main__":
         last_n_chars=LAST_N_CHARS,
         min_chars_per_item=MIN_CHARS_PER_ITEM,
         enable_mark_quotes=ENABLE_MARK_QUOTES,
+        enable_miss_check=ENABLE_MISS_CHECK,
         debug=DEBUG_MODE,
     )

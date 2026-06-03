@@ -197,6 +197,28 @@ class OSSAudioUploader:
             print(f"{Color.DARK_PURPLE}[OSS] 已清理 {len(keys)} 个临时文件")
 
 
+def ffprobe_duration(audio_path: str) -> str:
+    """用 ffprobe 获取音频时长，返回 HH:MM:SS 格式字符串。"""
+    result = subprocess.run(
+        ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+         "-of", "csv=p=0", str(audio_path)],
+        capture_output=True, text=True
+    )
+    duration_seconds = int(float(result.stdout.strip()))
+    hours, remainder = divmod(duration_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def format_duration(seconds: float) -> str:
+    """将秒数格式化为 X分X秒 或 X秒。"""
+    minutes = int(seconds // 60)
+    secs = int(seconds % 60)
+    if minutes > 0:
+        return f"{minutes}分{secs}秒"
+    return f"{secs}秒"
+
+
 if __name__ == "__main__":
     audio_path = r"D:\DATA\Project\OCR-ASR-with-MLLM\摩诃止观-久仁法师\摩诃止观001\摩诃止观001.mp3"
 
